@@ -3,7 +3,7 @@
 import { assetPath } from "./assetPath";
 import { FloatingPicker } from "./FloatingPicker";
 import { PLANNED_GEAR_KEY, parsePlannedGear, type PlannedGear } from "./plannedGear";
-import { MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
+import { DEFAULT_MATERIAL_DISCOUNT, MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, serializeMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, pieceOf, removeBuild, saveBuilds, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
@@ -1044,8 +1044,8 @@ export default function MhnowApp() {
     ]).then(([indexData, iconData, driftData]: [SeriesIndex, Record<string, string>, Driftstones]) => { setIndex(indexData); setIcons(iconData); setDriftstones(driftData); });
   }, []);
 
-  // 活動素材減免的魔物（所有配裝共用，另外存）；同樣等讀完存檔才寫回。
-  const [discounted, setDiscounted] = useState<string[]>([]);
+  // 活動素材減免的魔物（所有配裝共用，另外存），預設是這次活動的清單；同樣等讀完存檔才寫回。
+  const [discounted, setDiscounted] = useState<string[]>(DEFAULT_MATERIAL_DISCOUNT.monsters);
   const [discountRestored, setDiscountRestored] = useState(false);
   const [discountStorageError, setDiscountStorageError] = useState(false);
   const [discountPickerOpen, setDiscountPickerOpen] = useState(false);
@@ -1056,7 +1056,7 @@ export default function MhnowApp() {
   }, []);
   useEffect(() => {
     if (!discountRestored) return;
-    try { localStorage.setItem(MATERIAL_DISCOUNT_KEY, JSON.stringify(discounted)); setDiscountStorageError(false); } catch { setDiscountStorageError(true); }
+    try { localStorage.setItem(MATERIAL_DISCOUNT_KEY, serializeMaterialDiscount(discounted)); setDiscountStorageError(false); } catch { setDiscountStorageError(true); }
   }, [discounted, discountRestored]);
   const toggleDiscount = (key: string) => setDiscounted((state) => (state.includes(key) ? state.filter((item) => item !== key) : [...state, key]));
 
