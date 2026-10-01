@@ -2,8 +2,8 @@
 
 import { assetPath } from "./assetPath";
 import { FloatingPicker } from "./FloatingPicker";
-import { SERIES_SORT_KEY, SERIES_SORT_OPTIONS, parseSeriesSort, sortSeries, type SeriesSort } from "./seriesSort";
 import { PLANNED_GEAR_KEY, parsePlannedGear, type PlannedGear } from "./plannedGear";
+import { MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, pieceOf, removeBuild, saveBuilds, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
@@ -188,9 +188,9 @@ export function searchSeries(series: Series[], query: string, slot?: string): { 
   return hits.sort((a, b) => (b.skill?.level ?? 0) - (a.skill?.level ?? 0));
 }
 
-/** slot：配裝時正在選的部位，給技能搜尋用；計算器不分部位就不傳，只搜名稱。 */
+/** slot：配裝時正在選的部位，給技能搜尋用；計算器不分部位就不傳，只搜名稱。value 給陣列就是複選（素材減免用）。 */
 function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot }: {
-  series: Series[]; value: string; onPick: (key: string) => void; icons: Record<string, string>;
+  series: Series[]; value: string | string[]; onPick: (key: string) => void; icons: Record<string, string>;
   display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string;
 }) {
   const ranks = new Map(series.map((item, position) => [item.key, position]));
@@ -207,15 +207,16 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
     </div>
     {visible.length ? <div className={cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
       display === "image" ? "grid-cols-[repeat(auto-fill,minmax(82px,1fr))] max-[760px]:grid-cols-[repeat(auto-fill,minmax(72px,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]")}>
-      {visible.map(({ item, skill }) => <button key={item.key} title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} onClick={() => onPick(item.key)}
+      {visible.map(({ item, skill }) => { const active = Array.isArray(value) ? value.includes(item.key) : value === item.key; return <button key={item.key}
+        title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} aria-pressed={Array.isArray(value) ? active : undefined} onClick={() => onPick(item.key)}
         className={cx("min-w-0 p-[5px] border rounded-[7px] flex flex-col items-center justify-center text-[#2e3731] cursor-pointer",
           display === "name" ? "min-h-[42px]" : "min-h-[50px]",
-          value === item.key ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f1f2ef]")}>
+          active ?"border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f1f2ef]")}>
         {display === "image" && icons[item.key] ? <span className={cx("w-[52px] h-[52px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
           : <span className="font-bold text-[12px] leading-[1.3] text-center break-keep">{item.name}</span>}
         {display === "name" ? <small className="block max-w-full truncate text-[8px] text-[#777]">{`G${item.unlock} 起`}</small> : null}
         {skill ? <small className="block max-w-full truncate text-[10px] font-bold text-[#e08a00]">{skill.name} {skill.level}</small> : null}
-      </button>)}
+      </button>; })}
     </div> : <p className={NOTE}>找不到符合的魔物。</p>}
   </div>;
 }
@@ -690,7 +691,7 @@ function maxSkillsOf(build: Build, rows: GearRow[]) {
 }
 
 /** 收合時列在裝備下方：從目前階級升到目標階級還要的 Zenny 與素材。 */
-function MissingMaterials({ rows, range }: { rows: GradeRow[] | undefined; range: GradeRange }) {
+function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefined; range: GradeRange; waived?: boolean }) {
   const frame = "flex-[0_0_100%] pt-1.5 px-2.5 pb-2 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7] text-[12px] text-[#39423a]";
   // 沒選目標就不列（也不會去抓升級資料），要先判斷，不然會一直停在「載入中」。
   if (!range.target) return null;
@@ -701,7 +702,7 @@ function MissingMaterials({ rows, range }: { rows: GradeRow[] | undefined; range
   const total = calculateRange(rows, range.current, target);
   return <div className={frame}>
     <p className="flex justify-between items-baseline m-0 mb-0.5 text-[11px] text-[#6d756e]">
-      <span>缺少素材　{range.current === "unforged" ? "尚未生產" : range.current} → {target}</span>
+      <span>缺少素材　{range.current === "unforged" ? "尚未生產" : range.current} → {target}{waived ? <b className="ml-1.5 font-normal text-[#087b84]">減免中</b> : null}</span>
       <span>Zenny <b className="text-[12px] text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
     </p>
     {total.materials.map((item) => <p key={item.name} className="flex justify-between items-center m-0 py-px leading-[1.5]">
@@ -711,8 +712,8 @@ function MissingMaterials({ rows, range }: { rows: GradeRow[] | undefined; range
   </div>;
 }
 
-/** BuildCard 需要的共用資料（每張卡都一樣）。 */
-type CardContext = { icons: Record<string, string>; skillLevels: Record<string, string[]>; driftstones: Driftstones | null; gradeRowsFor: (key: string, kind: string) => GradeRow[] | undefined };
+/** BuildCard 需要的共用資料（每張卡都一樣）。gradeRowsFor 已套用素材減免；discounted 是減免中的魔物。 */
+type CardContext = { icons: Record<string, string>; skillLevels: Record<string, string[]>; driftstones: Driftstones | null; gradeRowsFor: (key: string, kind: string) => GradeRow[] | undefined; discounted: string[] };
 
 /** 技能總覽用：每個技能由哪些顏色的漂流石提供、各幾顆（只算實際有洞的）。 */
 function driftStonesBySkill(build: Build, rows: GearRow[], data: Driftstones | null) {
@@ -758,6 +759,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
       const isOpen = open(row.id);
       const piece = pieceOf(build, row.id, row.itemKey);
       const gradeRows = row.item ? ctx.gradeRowsFor(row.item.key, row.kind) : undefined;
+      const waived = row.id === "weapon" && !!row.item && ctx.discounted.includes(row.item.key);
       const drifts = build.drifts[row.id] ?? [];
       return <div key={row.id}
         className={cx("relative flex flex-wrap items-stretch bg-[#fffaf0] border rounded-[10px] overflow-hidden",
@@ -791,12 +793,13 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
           {row.traits ? <><h4 className={h4(true)}>武器特性</h4><TraitDetail traits={row.traits} /></> : null}
           {row.entries.length || row.slotGrades.length ? <>{row.traits ? <h4 className={h4()}>技能解鎖</h4> : null}<SkillTiers entries={row.entries} slotGrades={row.slotGrades} /></> : null}
           <h4 className={h4()}>升級素材（單件）</h4>
+          {waived ? <p className={cx(NOTE, "mt-0 mb-1.5 text-[#087b84]")}>素材減免中：不計採集素材與尖爪。</p> : null}
           {!gradeRows ? <p className={NOTE}>升級資料載入中……</p>
             : !gradeRows.length ? <p className={NOTE}>這件裝備沒有升級資料。</p>
               : <GradeRangeCost compact allowNone rows={gradeRows} value={piece}
                 onChange={(range) => onChange((next) => setPiece(next, row.id, { ...pieceOf(next, row.id, row.itemKey), ...range }))} />}
         </div> : null}
-        {row.item && !isOpen && build.showMissing ? <MissingMaterials rows={gradeRows} range={piece} /> : null}
+        {row.item && !isOpen && build.showMissing ? <MissingMaterials rows={gradeRows} range={piece} waived={waived} /> : null}
       </div>;
     })}
 
@@ -1041,18 +1044,24 @@ export default function MhnowApp() {
     ]).then(([indexData, iconData, driftData]: [SeriesIndex, Record<string, string>, Driftstones]) => { setIndex(indexData); setIcons(iconData); setDriftstones(driftData); });
   }, []);
 
-  const [seriesSort, setSeriesSort] = useState<SeriesSort>("name");
-  const [sortRestored, setSortRestored] = useState(false);
-  const [sortStorageError, setSortStorageError] = useState(false);
+  // 活動素材減免的魔物（所有配裝共用，另外存）；同樣等讀完存檔才寫回。
+  const [discounted, setDiscounted] = useState<string[]>([]);
+  const [discountRestored, setDiscountRestored] = useState(false);
+  const [discountStorageError, setDiscountStorageError] = useState(false);
+  const [discountPickerOpen, setDiscountPickerOpen] = useState(false);
+  const [discountQuery, setDiscountQuery] = useState("");
   useEffect(() => {
-    try { setSeriesSort(parseSeriesSort(localStorage.getItem(SERIES_SORT_KEY))); } catch { setSortStorageError(true); }
-    setSortRestored(true);
+    try { setDiscounted(parseMaterialDiscount(localStorage.getItem(MATERIAL_DISCOUNT_KEY))); } catch { setDiscountStorageError(true); }
+    setDiscountRestored(true);
   }, []);
   useEffect(() => {
-    if (!sortRestored) return;
-    try { localStorage.setItem(SERIES_SORT_KEY, seriesSort); setSortStorageError(false); } catch { setSortStorageError(true); }
-  }, [seriesSort, sortRestored]);
-  const allSeries = useMemo(() => sortSeries(index?.series ?? [], seriesSort), [index, seriesSort]);
+    if (!discountRestored) return;
+    try { localStorage.setItem(MATERIAL_DISCOUNT_KEY, JSON.stringify(discounted)); setDiscountStorageError(false); } catch { setDiscountStorageError(true); }
+  }, [discounted, discountRestored]);
+  const toggleDiscount = (key: string) => setDiscounted((state) => (state.includes(key) ? state.filter((item) => item !== key) : [...state, key]));
+
+  // 魔物選單一律照原始資料（series-index.json）的順序。
+  const allSeries = useMemo(() => index?.series ?? [], [index]);
   const seriesBy = useMemo(() => Object.fromEntries(allSeries.map((item) => [item.key, item])), [allSeries]);
   const weaponTypeName = (type: string) => WEAPON_NAMES[type] ?? index?.weaponTypes[type] ?? type;
   const slotName = (slot: ArmorSlot) => SLOT_NAMES[slot] ?? index?.slots[slot] ?? slot;
@@ -1091,8 +1100,13 @@ export default function MhnowApp() {
     if (!detail) return undefined;
     return (kind === "armor" ? detail.armor : detail.weapons?.[kind]) ?? [];
   };
-  const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor };
-  const statsPieces = statsPlan.map(({ row, series, piece }) => ({ key: `${row.id}|${row.itemKey}`, rows: gradeRowsFor(series, row.kind), range: piece }));
+  /** 配裝用的升級表：素材減免中的魔物，武器不算採集素材與尖爪（防具、計算器照常）。 */
+  const loadoutRowsFor = (key: string, kind: string): GradeRow[] | undefined => {
+    const rows = gradeRowsFor(key, kind);
+    return rows && kind !== "armor" && discounted.includes(key) ? waiveGatherMaterials(rows) : rows;
+  };
+  const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor: loadoutRowsFor, discounted };
+  const statsPieces = statsPlan.map(({ row, series, piece }) => ({ key: `${row.id}|${row.itemKey}`, rows: loadoutRowsFor(series, row.kind), range: piece }));
   const statsTotal = totalMissing(statsPieces.flatMap((piece) => (piece.rows?.length ? [{ ...piece, rows: piece.rows }] : [])));
   const statsLoading = statsPieces.filter((piece) => !piece.rows).length;
 
@@ -1174,22 +1188,15 @@ export default function MhnowApp() {
     </header>
     <nav className="flex flex-wrap justify-center gap-2 p-3 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("planned", "預計製作裝備")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
 
-    <div className="flex flex-wrap justify-center items-center gap-2 px-4 py-2 text-[12px] text-[#687168]">
-      <label className="flex items-center gap-2">魔物排序
-        <select value={seriesSort} onChange={(event) => setSeriesSort(parseSeriesSort(event.target.value))} className="rounded-md border border-[#d8d0bd] bg-white p-2 text-[#28352e]">
-          {Object.entries(SERIES_SORT_OPTIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </label>
-      <span>套用至所有魔物選單</span>
-      {seriesSort === "element" ? <span className="basis-full text-center">無屬性 → 火 → 水 → 雷 → 冰 → 龍 → 狀態異常 → 多屬性 → 無武器</span> : null}
-      {sortStorageError ? <span role="status">無法儲存排序偏好。</span> : null}
-    </div>
     {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；比 340px 窄（手機）就一欄滿版。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
     {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:pb-7 grid gap-3 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))]">
-      <div className="col-span-full flex items-center justify-between">
+      <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <PageHeading eyebrow="LOADOUT" title="裝備配置" />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button aria-pressed={discounted.length > 0} title="活動素材減免：選了的魔物，武器升級不需要採集素材與尖爪" onClick={() => { setDiscountQuery(""); setDiscountPickerOpen(true); }}
+            className={cx("py-1 px-2.5 border rounded-md text-[12px] cursor-pointer", discounted.length ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
+            素材減免{discounted.length ? ` ${discounted.length}` : ""}</button>
           <button title="把所有配裝存成 JSON 檔" onClick={exportBuilds}
             className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯出</button>
           <button title="從匯出的 JSON 檔讀回配裝" onClick={() => fileInput.current?.click()}
@@ -1207,6 +1214,16 @@ export default function MhnowApp() {
         <span>{importMessage}</span>
         <button aria-label="關閉訊息" onClick={() => setImportMessage(null)} className="border-0 bg-transparent p-0 text-[14px] text-inherit cursor-pointer opacity-70 hover:opacity-100">✕</button>
       </p> : null}
+      {discounted.length || discountStorageError ? <section className="col-span-full flex flex-wrap items-center gap-1.5 py-2 px-3 rounded-xl bg-[#eef8f7] border border-[#bfe1de] text-[12px] text-[#2b332c]">
+        <strong className="text-[13px] mr-1">素材減免中</strong>
+        <span className="text-[#5b635c] mr-1">武器不需採集素材與尖爪：</span>
+        {discounted.map((key) => <button key={key} aria-label={`取消${seriesBy[key]?.name ?? key}的素材減免`} onClick={() => toggleDiscount(key)}
+          className="inline-flex items-center gap-1 py-0.5 pl-1 pr-2 border border-[#bfe1de] rounded-full bg-white text-[12px] cursor-pointer hover:border-[#099aa5]">
+          {icons[key] ? <span aria-hidden="true" className={cx("w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[key])})` }} /> : null}
+          {seriesBy[key]?.name ?? key}<span aria-hidden="true" className="text-[#8b938c]">✕</span></button>)}
+        {discounted.length ? <button onClick={() => setDiscounted([])} className="ml-auto border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline">全部清除</button> : null}
+        {discountStorageError ? <span role="alert" className="basis-full text-[#b23a30]">瀏覽器無法儲存素材減免設定，重新整理後可能遺失。</span> : null}
+      </section> : null}
       {stats.open ? <MissingSummary builds={builds.builds} settings={stats} onChange={setStats} total={statsTotal} loading={statsLoading} monsterName={(key) => seriesBy[key]?.name ?? key} /> : null}
 
       {builds.builds.map((build) => <BuildCard key={build.id} build={build} rows={rowsByBuild[build.id]} ctx={cardContext}
@@ -1227,6 +1244,14 @@ export default function MhnowApp() {
           else gear[slot] = key;
           return { ...next, gear };
         })} />) : null}
+      {discountPickerOpen ? <Modal title={`素材減免（已選 ${discounted.length}）`} onClose={() => setDiscountPickerOpen(false)}>
+        <p className={cx(NOTE, "mt-0 mb-2")}>點魔物加入或取消。選了的魔物，所有武器升級都不需要採集素材（含尖爪）；防具不受影響。只套用在裝備配置與素材統計。</p>
+        <MonsterPicker series={weaponSeries} value={discounted} onPick={toggleDiscount} icons={icons} display={display} onDisplay={setDisplay} query={discountQuery} onQuery={setDiscountQuery} />
+        <div className="flex gap-2 mt-3">
+          <button disabled={!discounted.length} onClick={() => setDiscounted([])} className="py-2 px-3 rounded-lg border border-[#cfc7b4] bg-white text-[13px] cursor-pointer disabled:opacity-50 disabled:cursor-default">全部清除</button>
+          <button onClick={() => setDiscountPickerOpen(false)} className="flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer">完成</button>
+        </div>
+      </Modal> : null}
       {editing && editingBuild ? <Modal title={editing.slot === "weapon" ? "選擇武器" : `選擇${slotName(editing.slot)}裝備`} onClose={() => setEditing(null)}>
         <MonsterPicker slot={editing.slot} series={editing.slot === "weapon" ? weaponSeries : armorSeries} value={pickSeries} icons={icons} display={display} onDisplay={setDisplay} query={pickQuery} onQuery={setPickQuery}
           onPick={(key) => { setPickSeries(key); if (editing.slot !== "weapon") pickGear(editing.slot, key); }} />
