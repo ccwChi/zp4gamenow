@@ -1,6 +1,7 @@
 "use client";
 
 import { assetPath } from "./assetPath";
+import { FloatingPicker } from "./FloatingPicker";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, pieceOf, removeBuild, saveBuilds, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
@@ -729,10 +730,10 @@ function driftStonesBySkill(build: Build, rows: GearRow[], data: Driftstones | n
  * 一組配裝的卡片：頂端名稱／顯示缺少素材／刪除，接著六列裝備與技能進度條。
  * 多組並排顯示（仿 mhnow.me），所以尺寸比單組時緊湊。
  */
-function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onChange, onDelete }: {
+function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete }: {
   build: Build; rows: GearRow[]; ctx: CardContext; editingSlot: SlotId | null; open: (slot: SlotId) => boolean; canDelete: boolean;
   onEdit: (slot: SlotId) => void; onToggle: (slot: SlotId) => void; onDrift: (slot: ArmorSlot, index: number) => void; onSkill: (name: string, level: number) => void;
-  onChange: (update: (build: Build) => Build) => void; onDelete: () => void;
+  onChange: (update: (build: Build) => Build) => void; onDelete: () => void; onSkillGear: () => void;
 }) {
   const skills = maxSkillsOf(build, rows);
   const stones = driftStonesBySkill(build, rows, ctx.driftstones);
@@ -749,6 +750,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         className={cx(toolButton, "border-[#e3b8b4] bg-white text-[#b23a30]")}>刪除</button>
     </div>
 
+    <button onClick={onSkillGear} className="py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] text-[13px] cursor-pointer">依技能選全身裝備</button>
     {rows.map((row) => {
       const isOpen = open(row.id);
       const piece = pieceOf(build, row.id, row.itemKey);
@@ -815,6 +817,63 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
   </article>;
 }
 
+/** Each weapon type must use its own skills, including overrides. */
+export function gearForSkill(series: Series[], skill: string) {
+  return series.flatMap((item) => [
+    ...(item.hasArmor ? ARMOR_SLOTS.map((slot) => ({ slot, key: item.key, title: `${item.name}${SLOT_NAMES[slot]}`, entries: seriesSkills(item, slot) })) : []),
+    ...item.weaponTypes.map((type) => ({ slot: "weapon" as const, key: `${item.key}::${type}`, title: `${item.name}${WEAPON_NAMES[type] ?? type}`, entries: seriesSkills(item, "weapon", type) })),
+  ]).map((gear) => ({ ...gear, level: skillsAtGrade(gear.entries, MAX_GRADE)[skill] ?? 0 }))
+    .filter((gear) => gear.level > 0).sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, "zh-Hant"));
+}
+
+function SkillGearPicker({ series, build, onPick, onClose }: {
+  series: Series[]; build: Build; onPick: (slot: SlotId, key: string) => void; onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [skill, setSkill] = useState("");
+  const [open, setOpen] = useState(true);
+  const names = useMemo(() => [...new Set(series.flatMap((item) => [
+    ...Object.values(item.skills).flat(), ...Object.values(item.weaponSkills ?? {}).flat(),
+  ].map((entry) => entry.skill)))].sort((a, b) => a.localeCompare(b, "zh-Hant")), [series]);
+  const matches = useMemo(() => gearForSkill(series, skill), [series, skill]);
+  const filtered = names.filter((name) => name.toLowerCase().includes(query.trim().toLowerCase()));
+  return <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={onClose}>
+    <div className="h-full flex flex-col gap-2">
+    <p className={cx(NOTE, "shrink-0 m-0")}>點選立即帶入，再點同一件即可取消，可連續選擇。相同部位會替換；技能等級以 G10 計算，不含漂流石。</p>
+    <section className={cx("flex flex-col min-h-0 border border-[#e3dac6] rounded-lg", open && !skill ? "flex-1" : "shrink-0")}>
+      <button aria-expanded={open} onClick={() => setOpen(!open)} className="shrink-0 flex items-center justify-between gap-2 w-full p-2 border-0 bg-[#fffaf0] rounded-lg text-[13px] font-bold text-left cursor-pointer">
+        <span>技能{skill ? `：${skill}` : ""}</span>
+        <span className={cx("inline-block [transition:transform_.15s]", open && "[transform:rotate(180deg)]")}>▾</span>
+      </button>
+      {open ? <div className="flex flex-col min-h-0 p-2 gap-2">
+        <input aria-label="搜尋技能" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入技能名稱搜尋" className="block w-full box-border p-2 border border-[#d8d0bd] rounded-md shrink-0" />
+        <div className={cx("flex flex-wrap content-start gap-1.5 overflow-auto min-h-0", skill && "max-h-[35cqh]")} aria-label="技能選擇">
+          {filtered.map((name) => <button key={name} aria-pressed={skill === name} onClick={() => { setSkill(name); setOpen(false); }}
+            className={cx("py-1 px-2 rounded-md border text-[12px] cursor-pointer", skill === name ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>)}
+          {!filtered.length ? <p className={NOTE}>找不到符合的技能。</p> : null}
+        </div>
+      </div> : null}
+    </section>
+    {skill ? <div className="flex-1 min-h-0 overflow-auto">
+      <p className="text-[13px] font-bold mt-0">{skill} · {matches.length} 件裝備</p>
+      {(["weapon", ...ARMOR_SLOTS] as SlotId[]).map((slot) => <section key={slot} className="my-3">
+        <h3 className="text-[14px] mb-2">{slot === "weapon" ? "武器" : SLOT_NAMES[slot]}</h3>
+        <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-2">{matches.filter((gear) => gear.slot === slot).map((gear) => {
+          const selected = build.gear[slot] === gear.key;
+          return <button key={gear.key} aria-pressed={selected} onClick={() => onPick(slot, gear.key)}
+            className={cx("p-2 text-left rounded-lg border cursor-pointer", selected ? "border-[#099aa5] bg-[#eaf7f4]" : "border-[#e3dac6] bg-[#fffaf0]")}>
+            <span className="block text-[13px] font-bold">{gear.title}{selected ? " ✓ 已裝備" : ""}</span>
+            <span className="block text-[12px] text-[#5b635c]">{Object.entries(skillsAtGrade(gear.entries, MAX_GRADE)).map(([name, level]) => `${name} ${level}`).join("、")}</span>
+          </button>;
+        })}</div>
+        {!matches.some((gear) => gear.slot === slot) ? <p className={NOTE}>此部位沒有這個技能的裝備。</p> : null}
+      </section>)}
+    </div> : !open ? <p className={NOTE}>選擇技能後，會列出武器與五個防具部位的裝備。</p> : null}
+    <button onClick={onClose} className="shrink-0 w-full py-2 rounded-lg border-0 bg-[#28352e] text-white cursor-pointer">完成選擇</button>
+    </div>
+  </FloatingPicker>;
+}
+
 export default function MhnowApp() {
   const [index, setIndex] = useState<SeriesIndex | null>(null);
   const [details, setDetails] = useState<Record<string, SeriesDetail>>({});
@@ -842,6 +901,7 @@ export default function MhnowApp() {
   const [pickSeries, setPickSeries] = useState(""); const [pickQuery, setPickQuery] = useState("");
   const [openTiers, setOpenTiers] = useState<Record<string, boolean>>({});
   const [skillTip, setSkillTip] = useState<{ name: string; level: number } | null>(null);
+  const [skillGearBuild, setSkillGearBuild] = useState<string | null>(null);
   // 新增的那組要捲進畫面（組數多時會排到下面去）。
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   useEffect(() => {
@@ -1019,13 +1079,20 @@ export default function MhnowApp() {
         editingSlot={editing?.build === build.id ? editing.slot : null} open={(slot) => !!openTiers[`${build.id}:${slot}`]} canDelete={builds.builds.length > 1}
         onEdit={(slot) => editSlot(build, slot)} onToggle={(slot) => setOpenTiers((state) => ({ ...state, [`${build.id}:${slot}`]: !state[`${build.id}:${slot}`] }))}
         onDrift={(slot, position) => setDriftPick({ build: build.id, slot, index: position })} onSkill={(name, level) => setSkillTip({ name, level })}
-        onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} />)}
+        onSkillGear={() => setSkillGearBuild(build.id)} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} />)}
 
       <button aria-label="新增配裝" disabled={full} title={full ? `最多 ${MAX_BUILDS} 組` : "新增一組空白配裝"} onClick={addNewBuild}
         className="min-h-[120px] border border-dashed border-[#b5bbb5] rounded-xl bg-transparent text-[#5b635c] text-[14px] cursor-pointer hover:bg-[#ece8dc] disabled:cursor-default disabled:hover:bg-transparent">
         {full ? `已達上限 ${MAX_BUILDS} 組` : "＋ 新增配裝"}
       </button>
 
+      {skillGearBuild ? builds.builds.filter((build) => build.id === skillGearBuild).map((build) => <SkillGearPicker key={build.id} series={allSeries} build={build}
+        onClose={() => setSkillGearBuild(null)} onPick={(slot, key) => changeBuild(build.id)((next) => {
+          const gear = { ...next.gear };
+          if (gear[slot] === key) delete gear[slot];
+          else gear[slot] = key;
+          return { ...next, gear };
+        })} />) : null}
       {editing && editingBuild ? <Modal title={editing.slot === "weapon" ? "選擇武器" : `選擇${slotName(editing.slot)}裝備`} onClose={() => setEditing(null)}>
         <MonsterPicker slot={editing.slot} series={editing.slot === "weapon" ? weaponSeries : armorSeries} value={pickSeries} icons={icons} display={display} onDisplay={setDisplay} query={pickQuery} onQuery={setPickQuery}
           onPick={(key) => { setPickSeries(key); if (editing.slot !== "weapon") pickGear(editing.slot, key); }} />
