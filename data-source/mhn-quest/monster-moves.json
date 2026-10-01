@@ -1,0 +1,1082 @@
+{
+ "chat": {
+  "arm-press": 43,
+  "bite": 15,
+  "double-lick": [
+   20,
+   20
+  ],
+  "jump-press": 30,
+  "punch": 33,
+  "punch-strong": 37,
+  "rush": 29,
+  "single-lick": 20
+ },
+ "khez": {
+  "bite": 21,
+  "breath": 52,
+  "breath-bomb": 42,
+  "breath-shower": 42,
+  "charge-attack": 42,
+  "charge-pounce": 42,
+  "charge-walk-bite": 35,
+  "neck-stretch-bite": 28,
+  "neck-stretch-bite-sweep": 32,
+  "neck-stretch-bite-walk": 21,
+  "pounce": 32,
+  "straight-bite": 24,
+  "tail-roll": 31,
+  "walk-bite": 25
+ },
+ "basa": {
+  "breath": 46,
+  "gas-flame": 28,
+  "gas-hypnotic": [
+   0,
+   "sleep"
+  ],
+  "gas-poison": [
+   0,
+   "poison"
+  ],
+  "laser": 52,
+  "rolling": 43,
+  "rush": 43,
+  "rush-mole": 46,
+  "rush-mole-jump-up": 46,
+  "rush-rolling": 49,
+  "side-tackle": 40,
+  "tail-roll": 40,
+  "tail-whip": 28
+ },
+ "cham": {
+  "body-press": 65,
+  "claw": 37,
+  "head-sweep": 50,
+  "poison-ball": [
+   12,
+   "venom"
+  ],
+  "poison-ball-big": [
+   16,
+   "venom"
+  ],
+  "poison-laser": [
+   18,
+   "venom"
+  ],
+  "poison-laser-body": 48,
+  "poison-mist": [
+   8,
+   "venom"
+  ],
+  "poison-mist-laser": [
+   12,
+   "venom"
+  ],
+  "pounce": 58,
+  "rush": 58,
+  "rush-tongue": 46,
+  "tail-slam": 40,
+  "tail-slam-rock": 50,
+  "tongue": 30,
+  "tongue-sweep": 43,
+  "tongue-sweep-body": 45
+ },
+ "arzu": {
+  "attack-common": 12,
+  "bear-hug": 50,
+  "dash-attack": 35,
+  "front-attack": 40,
+  "hip-attack": 35,
+  "rock-throw": 30,
+  "scratch": [
+   40,
+   40,
+   40,
+   40
+  ],
+  "tackle": [
+   55,
+   55
+  ]
+ },
+ "lago": {
+  "attack-common": 12,
+  "bear-hug": 42,
+  "charge": 30,
+  "forward-roll": 30,
+  "hip-attack": 40,
+  "jumping-attack": 50,
+  "scratch": [
+   30,
+   35,
+   40
+  ],
+  "sliding-start": 20,
+  "sliding-tuckle": 30,
+  "snowball-forward": 10,
+  "snowball-popfly": 12,
+  "snowball-rolling": 12,
+  "spin-attack": 50,
+  "wind-effect": 3
+ },
+ "volv": {
+  "body-press": 59,
+  "continuous-claw": [
+   35,
+   35,
+   42,
+   49
+  ],
+  "gas-attack": 38,
+  "hand-strike": 12,
+  "hopping-attack": 42,
+  "hug": 42,
+  "paralysis-breath": [
+   22,
+   "paralysis"
+  ],
+  "paralysis-breath-floor": [
+   0,
+   "paralysis"
+  ],
+  "rolling-back": 42,
+  "rolling-front": 42,
+  "rolling-left-right": 31,
+  "scratch": 31,
+  "scratch-double": 31,
+  "standing-attack": 12,
+  "tongue-attack": 12
+ },
+ "mizu": {
+  "bite": 22,
+  "bite-continuous": 32,
+  "body-press": 42,
+  "bubble": [
+   1,
+   "bubble"
+  ],
+  "bubble-large": [
+   2,
+   "bubble"
+  ],
+  "punch": 50,
+  "rush": 40,
+  "spin-attack": 65,
+  "summersolt": 50,
+  "summersolt-continuous": 50,
+  "tail-strike": 60,
+  "tail-whip": 40,
+  "water-breath": 56,
+  "water-laser": 56,
+  "water-laser-around": 42
+ },
+ "magn": {
+  "bite": 21,
+  "bite-sweep": 42,
+  "bite-swing-tail": 31,
+  "dive": 51,
+  "down-punch": 21,
+  "foreleg-sweep": 42,
+  "foreleg-sweep-hellfire": 52,
+  "hellfire": [
+   31,
+   "hellfire"
+  ],
+  "hellfire-bite-explosion": [
+   41,
+   "hellfire"
+  ],
+  "hellfire-bite-left": 14,
+  "hellfire-bite-move": 5,
+  "hellfire-bite-right": 14,
+  "hellfire-gas": [
+   29,
+   "hellfire"
+  ],
+  "hellfire-gas-throw-end": [
+   24,
+   "hellfire"
+  ],
+  "hellfire-rage-dash": 30,
+  "hellfire-rage-explosion": [
+   20,
+   "hellfire"
+  ],
+  "hellfire-rage-finish": [
+   70,
+   "hellfire"
+  ],
+  "hellfire-tail-spear-spiral": [
+   70,
+   "hellfire"
+  ],
+  "horn-swing": 32,
+  "jet-attack": 46,
+  "pounce": 46,
+  "punch": 42,
+  "punch-hellfire": 52,
+  "tail-spear-strike": 42,
+  "tail-spear-sweep-strike": 42,
+  "tail-spear-thrust": 59,
+  "tail-spear-turn-down": 63,
+  "tail-spear-turn-up": 31,
+  "wide-turn-dash": 14
+ },
+ "akno": {
+  "breath-bullet": 35,
+  "breath-floor": 2,
+  "clod": 42,
+  "headbutt-close": 35,
+  "headbutt-common": 44,
+  "headbutt-finish": 48,
+  "headbutt-slam": 30,
+  "kick-backstep": 35,
+  "kick-jump": 28,
+  "kick-sobat": 42,
+  "rush-close": 44,
+  "rush-open": 35,
+  "somersault": 48,
+  "somersault-rear-kick": 46,
+  "tail-attack": 30,
+  "wing-combo-kick": 39,
+  "wing-combo-wing": 30,
+  "wing-sweep": 30,
+  "wing-uppercut": 48
+ },
+ "somn": {
+  "head-slap": 35,
+  "punch": 28,
+  "punch-double": 28,
+  "rush": 32,
+  "shell-explosion": 55,
+  "shell-flash": 0,
+  "sleep": [
+   0,
+   "sleep"
+  ],
+  "spin-jump-attack": 50,
+  "stomp": 48,
+  "thorn": 12,
+  "thorn-landing": 5,
+  "upper": 60,
+  "water-blast": 5
+ },
+ "rathi": {
+  "flying-gliding-attack": 40,
+  "flying-gliding-attack-1": 28,
+  "rotate-around-bite": 28,
+  "summersault": 55,
+  "summersault-severed-tail": 55
+ },
+ "p-rathi": {
+  "flying-gliding-attack": 40,
+  "flying-gliding-attack-1": 28,
+  "rotate-around-bite": 28,
+  "summersault": 55,
+  "summersault-severed-tail": 55,
+  "flame-injection": 60,
+  "forward-bite": 37,
+  "sweep-summersault": 55,
+  "sweep-summersault-severed-tail": 55
+ },
+ "g-rathi": {
+  "flying-gliding-attack": 40,
+  "flying-gliding-attack-1": 28,
+  "rotate-around-bite": 28,
+  "breath-ultimate": 70,
+  "flame-injection-blue": 65,
+  "multiple-breath-back-step": 52,
+  "multiple-breath-back-step-blue": 57,
+  "induced-explosion": 35,
+  "summersault": 55,
+  "summersault-360": 55,
+  "summersault-step-in": 46,
+  "sweep-summersault": 55
+ },
+ "ratha": {
+  "back-step-breath": 63,
+  "breath": 52,
+  "claw-attack": 28,
+  "flamethrower": 46,
+  "flamethrower-floor": 3,
+  "flying-bite": 34,
+  "flying-tail-attack": 37,
+  "bite": 28,
+  "breath-head": 10,
+  "rush": 37,
+  "tail-roll": 31,
+  "kick": 43,
+  "stamp": 40,
+  "stamp-impact": 30
+ },
+ "a-ratha": {
+  "claw-attack": 28,
+  "flamethrower": 46,
+  "flamethrower-floor": 3,
+  "flying-bite": 34,
+  "flying-tail-attack": 37,
+  "breath-head": 10,
+  "rush": 37,
+  "tail-roll": 31,
+  "kick": 43,
+  "stamp": 40,
+  "stamp-impact": 30,
+  "back-step-breath": 70,
+  "flying-continuous-kick": 43,
+  "flying-vertical-drop": 54,
+  "flying-vertical-drop-impact": 47,
+  "strong-bite": 38,
+  "strong-breath": 62
+ },
+ "s-ratha": {
+  "back-step-breath": 63,
+  "claw-attack": 28,
+  "flamethrower": 46,
+  "flamethrower-floor": 3,
+  "flying-bite": 34,
+  "flying-tail-attack": 37,
+  "bite": 28,
+  "breath-head": 10,
+  "rush": 37,
+  "kick": 43,
+  "stamp": 40,
+  "stamp-impact": 30,
+  "back-turn-breath": 24,
+  "back-turn-breath-blue": 28,
+  "breath-ultimate": 62,
+  "flamethrower-strong": 46,
+  "flamethrower-strong-blue": 56,
+  "flying-claw-sweep": 59,
+  "flying-claw-sweep-tail": 49,
+  "double-bite-sweep": 38,
+  "tail-whip": 34,
+  "vertical-kick": 52,
+  "induced-explosion": 35
+ },
+ "diab": {
+  "horn-swing-foot": 21,
+  "horn-swing-horn": 52,
+  "horn-swing-tail": 37,
+  "horn-toss": 53,
+  "mole-attack": 63,
+  "rush": 63,
+  "side-tackle-body": 49,
+  "side-tackle-tail": 21,
+  "tail-strike": 49,
+  "tail-swing": 49
+ },
+ "b-diab": {
+  "horn-swing-foot": 21,
+  "horn-swing-horn": 52,
+  "horn-swing-tail": 37,
+  "horn-toss": 53,
+  "mole-attack-strong-body": 49,
+  "mole-attack-strong-pop": 63,
+  "rush-strong": 72,
+  "side-tackle-body": 49,
+  "side-tackle-tail": 21,
+  "tail-strike": 49,
+  "tail-swing": 49
+ },
+ "kiri": {
+  "back-kick": 61,
+  "headbutt": 31,
+  "horn-swing": 31,
+  "horn-swing-double": 42,
+  "lightning-armor": 50,
+  "lightning-bolt": 50,
+  "lightning-bolt-large": 70,
+  "lightning-line": 100,
+  "lightning-step": 26,
+  "rush": 34
+ },
+ "raja": {
+  "beam": 64,
+  "beam-rage": 64,
+  "bind-voice-pump-up": 0,
+  "flip": 52,
+  "jump-breath": 46,
+  "jump-breath-rage": 46,
+  "jump-rolling": 46,
+  "punch-hook": 43,
+  "punch-hook-sub": 25,
+  "punch-triple": 61,
+  "punch-triple-finish": 67,
+  "rush-behind": 34,
+  "rush-horn": 52,
+  "rush-horn-finish": 52,
+  "rush-press": 49,
+  "rush-pump-up-slam": 76,
+  "rush-punch": 46,
+  "rush-push": 46,
+  "rush-spin": 52,
+  "rush-step": 34
+ },
+ "kush": {
+  "flying-claw": 40,
+  "flying-rush": 55,
+  "flying-rush-land": 58,
+  "back-jump": 0,
+  "bite-continuous": 55,
+  "bite-side": 34,
+  "claw-rotatable": 37,
+  "claw-turn": 40,
+  "generate-tornado": 70,
+  "pounce": 58,
+  "rush": 52,
+  "supercell-strong": 100,
+  "supercell-weak": 64,
+  "sweep-breath-dragon": 52,
+  "sweep-breath-small": 40,
+  "tornado-dragon": 64,
+  "projectile-breath-dragon": 70,
+  "projectile-breath-generate-tornado": 70,
+  "projectile-breath-small": 58,
+  "projectile-breath-strong-dragon": 70,
+  "projectile-storm-dance": 43,
+  "projectile-tornado-from-breath-straight-attack": 43,
+  "projectile-tornado-from-breath-wind": 0,
+  "projectile-tornado-strong": 70,
+  "wind-dragon-no-guard-multi-hit": 0,
+  "wind-large-no-guard-multi-hit": 0
+ },
+ "teos": {
+  "flying-breath-flame": 70,
+  "flying-rush-land": 49,
+  "flying-tail-slam": 37,
+  "bite": 37,
+  "bite-breath": 55,
+  "bite-forward": 37,
+  "bite-side": 37,
+  "bite-side-body": 25,
+  "bite-turn": 37,
+  "bite-turn-body": 25,
+  "breath-flame": 70,
+  "breath-flame-under": 8,
+  "breath-powder": 70,
+  "claw": 37,
+  "claw-rotatable": 37,
+  "claw-turn": 37,
+  "nova": 80,
+  "pounce": 49,
+  "powder-front": 70,
+  "rush": 49,
+  "super-nova": 150,
+  "sweep-breath-flame": 28,
+  "sweep-breath-powder": 28,
+  "tail-swing": 37,
+  "projectile-powder": [
+   0,
+   "blast"
+  ],
+  "projectile-powder-explosion": 55,
+  "projectile-powder-strong-explosion": 70
+ },
+ "tigr": {
+  "bind-voice": 45,
+  "bite": 32,
+  "bite-double": 38,
+  "bite-double-body": 18,
+  "bite-step": 32,
+  "foreleg-sweep": 28,
+  "pounce": 36,
+  "rock-bullet": 45,
+  "rush": 66,
+  "tail-roll": 52,
+  "tail-whip": 28
+ },
+ "narg": {
+  "bite": 20,
+  "bite-continuous": 25,
+  "jump-attack-bite": 22,
+  "jump-attack-body": 25,
+  "jump-attack-slanting": 27,
+  "jump-tail-slap-body": 29,
+  "jump-tail-slap-tail": 32,
+  "spin-tail-attack": 37,
+  "tail-slap": 25,
+  "tail-stomp": 40,
+  "projectile-thorn": [
+   18,
+   "bleeding"
+  ],
+  "projectile-thorn-on-ground": [
+   5,
+   "bleeding"
+  ]
+ },
+ "bari": {
+  "flying-rolling-dive-body": 45,
+  "flying-rolling-dive-forelegs": 35,
+  "dive-body": 35,
+  "dive-forelegs": 22,
+  "down-body": 18,
+  "forward-bite-body": 18,
+  "forward-bite-head": 28,
+  "roll-clow": 31,
+  "short-tackle": 52,
+  "slamming-bite": 60,
+  "slamming-bite-head": 40,
+  "tail-spin": 20,
+  "tail-sweep": 31,
+  "tail-sweep-ice": 20,
+  "ice-breath": 24
+ },
+ "devi": {
+  "alignment-bite": 28,
+  "bite-front-foot": 28,
+  "breath": 72,
+  "breath-leak": 28,
+  "counter-bite-strong": 50,
+  "rock-throw-body": 46,
+  "rock-throw-head": 46,
+  "rock-throw-rock": 52,
+  "rush-bite": 44,
+  "rush-bite-continuous": 58,
+  "rush-jump": 34,
+  "side-tackle": 58,
+  "strong-bite-in": 64,
+  "strong-bite-out": 28,
+  "sweep-bite-front-foot": 28,
+  "sweep-bite-strong": 46,
+  "tail-roll": 34,
+  "trample": 46
+ },
+ "barr": {
+  "bite": 33,
+  "headbutt": 41,
+  "headbutt-side": 33,
+  "mud": 21,
+  "rush": 58,
+  "side-tackle": 26,
+  "tail-strike": 33,
+  "tail-swing": 26
+ },
+ "zino": {
+  "body-slam": 40,
+  "charge-large": 23,
+  "continue-jump-punch-sparking": 53,
+  "counter-punch": 27,
+  "headbutt": 27,
+  "jump-back-press-sparking": 53,
+  "pounce": 27,
+  "pounce-sparking": 27,
+  "punch": 27,
+  "punch-sparking": 27,
+  "punch-strong": 53,
+  "punch-strong-sparking": 53,
+  "rush": 40,
+  "side-tackle": 40,
+  "somersault": 53,
+  "tail-attack": 27,
+  "tail-slam": 53,
+  "tail-swing": 40,
+  "thunderbug": 19,
+  "thunderbug-rotatable": 23
+ },
+ "glav": {
+  "bite-dash": 28,
+  "bite-dash-flame": 34,
+  "bite-rotate": 23,
+  "bite-rotate-flame": 28,
+  "bite-single": 28,
+  "bite-single-flame": 34,
+  "breath": 20,
+  "breath-explode": 20,
+  "breath-explode2": 40,
+  "breath-head": 20,
+  "severed-tail": 20,
+  "tail-back-roll": 31,
+  "tail-back-roll-burn": 35,
+  "tail-back-roll-rust": 28,
+  "tail-combo-burn": 35,
+  "tail-fire-attack": 42,
+  "tail-fire-attack-burn": 48,
+  "tail-fire-attack-fire": 42,
+  "tail-fire-attack-rust": 38,
+  "tail-horizontal": 42,
+  "tail-horizontal-burn": 48,
+  "tail-horizontal-rust": 38,
+  "tail-jump-attack": 48,
+  "tail-jump-attack-burn": 55,
+  "tail-jump-attack-rust": 43,
+  "tail-spin-attack-burn": 60,
+  "tail-vertical": 42,
+  "tail-vertical-burn": 48,
+  "tail-vertical-rust": 38
+ },
+ "anja": {
+  "advance-sweep": 40,
+  "bulldozer-attack": 58,
+  "combo-bite": 43,
+  "fire-breath": 28,
+  "jump-attack": 47,
+  "leg-claw": 19,
+  "rush": 42,
+  "side-tackle": 22,
+  "sweep-bite": 47,
+  "tail-roll": 25,
+  "tail-slam": 22,
+  "weak-bite": 22
+ },
+ "g-jagr": {
+  "fat-body-slam": 46,
+  "fat-claw": 28,
+  "fat-rolling": 34,
+  "fat-tail-whip": 28,
+  "fat-vomiting-breath": 34,
+  "fat-vomiting-breath-super-far": 54,
+  "fat-vomiting-breath-super-near": 54,
+  "slim-bite": 28,
+  "slim-claw": 22,
+  "slim-dash-bite": 40,
+  "slim-dash-bite-body": 34,
+  "slim-punch-super": 54,
+  "slim-strong-bite": 34,
+  "slim-strong-bite-body": 22,
+  "slim-tail-whip": 22
+ },
+ "puke": {
+  "assault-tongue-attack": 43,
+  "assault-tongue-attack-dash": 31,
+  "breath": [
+   22,
+   "poison"
+  ],
+  "poison-mist": [
+   43,
+   "poison"
+  ],
+  "rush": 31,
+  "scutternuts-breath": [
+   22,
+   "poison"
+  ],
+  "scutternuts-explosion": [
+   22,
+   "poison"
+  ],
+  "scutternuts-jump-breath": [
+   47,
+   "poison"
+  ],
+  "stamp": 28,
+  "tail-roll": 28,
+  "tongue-attack": 43
+ },
+ "c-puke": {
+  "rush-aerial": 31,
+  "tail-roll": 28,
+  "water-breath": 28,
+  "water-breath-back-jump": 28,
+  "water-breath-rampage": 28,
+  "water-cannon": 25,
+  "water-cannon-aerial-spiral": 28,
+  "water-cannon-pumping": 28,
+  "water-cannon-sweep": 25,
+  "water-cannon-sweep-strong": 28,
+  "water-pressure-breath": 28,
+  "water-pressure-breath-split": 28
+ },
+ "nerg": {
+  "headbutt": 31,
+  "head-smash": 58,
+  "jab": 31,
+  "pounce": 55,
+  "pounce-strong": 61,
+  "punch": 67,
+  "punch-approach": 40,
+  "punch-approach-body": 31,
+  "punch-body": 52,
+  "punch-flying": 67,
+  "punch-spike": 61,
+  "spike-dive-bomb": 100,
+  "spike-dive-bomb-spike": 70,
+  "sweep": 58,
+  "tail-slam": 34,
+  "tail-sweep": 61,
+  "upper": 52,
+  "upper-slam": 52,
+  "wing-upper": 49,
+  "wing-upper-double": 34,
+  "wing-upper-rush": 55,
+  "wing-upper-rush-slam": 52,
+  "projectile-spike-head-smash": 64
+ },
+ "kulu": {
+  "dig": 10,
+  "double-slap": 28,
+  "holding-break-pounce": 46,
+  "holding-charge": 37,
+  "holding-pounce": 46,
+  "holding-slamming": 40,
+  "holding-throw": 30,
+  "peck": 22,
+  "pounce": [
+   28,
+   37
+  ],
+  "scratch": 28
+ },
+ "jyur": {
+  "diving-assault-attack-attack": 58,
+  "diving-assault-attack-land": 23,
+  "diving-bite": 23,
+  "diving-bite-double-bite": 33,
+  "diving-bite-double-body": 23,
+  "diving-rush": 47,
+  "diving-tail-attack": [
+   23,
+   39
+  ],
+  "bite": 23,
+  "rush": 47,
+  "tail-roll": 33,
+  "projectile-breath-burst": 23,
+  "projectile-diving-breath-double": 17,
+  "projectile-diving-breath-triple": 17,
+  "projectile-breath": 17
+ },
+ "tobi": {
+  "bite": 22,
+  "continuous-bite": 43,
+  "glide-tail-jump": 22,
+  "glide-tail-slam": 43,
+  "jump-bite": 22,
+  "sparking-headbutt": 31,
+  "step-bite": 40,
+  "tail-slam": 52,
+  "tail-slam-broken": 43,
+  "tail-slam-sparking": 59,
+  "tail-slap-sparking": 36,
+  "tail-swing": 22,
+  "tail-swing-broken": 16,
+  "tail-swing-sparking": 31
+ },
+ "paol": {
+  "balloon-breath": 40,
+  "balloon-rush": 36,
+  "balloon-tail-slap-back": 31,
+  "balloon-tail-slap-front": 31,
+  "balloon-tail-strike": 45,
+  "balloon-vertical-press": 55,
+  "bite": 22,
+  "rush-body": 33,
+  "stamp": 22,
+  "tail-roll": 28
+ },
+ "n-paol": {
+  "balloon-breath-bullet": [
+   8,
+   "sleep"
+  ],
+  "balloon-breath-stay": [
+   0,
+   "sleep"
+  ],
+  "balloon-spin-rush": 45,
+  "balloon-spout": [
+   15,
+   "sleep"
+  ],
+  "balloon-spout-stay": [
+   0,
+   "sleep"
+  ],
+  "balloon-tail-strike": 33,
+  "flying-tail-punch": 36,
+  "bite": 22,
+  "rush-body": 33,
+  "stamp": 22,
+  "tail-roll": 28
+ },
+ "legi": {
+  "flying-charge-bite": 31,
+  "flying-frost-sweep": 52,
+  "flying-lower-claw": 25,
+  "flying-lower-tail-roll": 37,
+  "frost-shot": 40,
+  "bite": 25,
+  "forward-bite": 25,
+  "frost-tail-strike": 43,
+  "frost-tail-sweep": 55,
+  "pounce-kick": 35,
+  "rush": 37,
+  "stamp": 40,
+  "tail-spin": 31,
+  "tail-strike": 34,
+  "tail-sweep": 37,
+  "spin-rush": 34
+ },
+ "g-girr": {
+  "bite-body": 25,
+  "bite-head": [
+   34,
+   "paralysis"
+  ],
+  "continuous-bite": [
+   34,
+   "paralysis"
+  ],
+  "kill-bite-body": 46,
+  "kill-bite-head": [
+   46,
+   "paralysis"
+  ],
+  "paralysis-breath": [
+   22,
+   "paralysis"
+  ],
+  "rush-bite-body": 25,
+  "rush-bite-head": [
+   22,
+   "paralysis"
+  ],
+  "side-tackle-left": 32,
+  "side-tackle-right": 32,
+  "step-bite": [
+   22,
+   "paralysis"
+  ],
+  "tail-whip": 22
+ },
+ "odog": {
+  "bite": 22,
+  "break-through": 50,
+  "break-through-sweep": 50,
+  "claw-attack": 22,
+  "claw-attack-bleeding": 22,
+  "pounce-scratch": 43,
+  "pounce-scratch-bleeding": [
+   43,
+   "bleeding"
+  ],
+  "rotate-around-bite": 34,
+  "scratch": 28,
+  "scratch-bleeding": [
+   28,
+   "bleeding"
+  ],
+  "swing-down-claw": 42,
+  "swing-down-claw-bleeding": [
+   42,
+   "bleeding"
+  ],
+  "tail-attack": 22,
+  "tail-swing": 50
+ },
+ "e-odog": {
+  "bite-f": 22,
+  "break-through-f": 50,
+  "break-through-sweep-f": 50,
+  "breath": 22,
+  "breath-explosion": 19,
+  "rolling-tail": 28,
+  "rotate-around-bite-f": 46,
+  "rotate-around-break-through": 40,
+  "rotate-around-break-through-f": 49,
+  "taile-jump-bite": 70,
+  "taile-jump-bite-f-head": 60,
+  "taile-jump-bite-head": 40
+ },
+ "rado": {
+  "bind-voice-jaw": 22,
+  "born": 10,
+  "double-swing-jaw": 40,
+  "horizontal-rolling-attack": 40,
+  "hypnotic-gas": 0,
+  "jaw-attack": 22,
+  "rolling": 46,
+  "rolling-stamp": 60,
+  "rolling-tail": 19,
+  "side-tackle": 31,
+  "stamp": 58,
+  "tail-roll": 31
+ },
+ "baze": {
+  "bite": 22,
+  "breath": 40,
+  "flying-press": 46,
+  "flying-rush": 55,
+  "head-rush": 46,
+  "head-rush-wing": [
+   22,
+   18,
+   14
+  ],
+  "head-slap": 28,
+  "press": 55,
+  "rush": 55,
+  "rush-to-fly": 55,
+  "scale-explosion": 37,
+  "side-tackle": 37,
+  "tail-slap": 37,
+  "tail-stomp": 37
+ },
+ "tzit": {
+  "dash-kick-rush-dash": 25,
+  "dash-kick-rush-kick": 28,
+  "flash": [
+   0,
+   "blind"
+  ],
+  "jump-kick-rush-jump": 28,
+  "jump-kick-rush-kick": 40,
+  "jump-kick-rush-tail": 46,
+  "scratch": 22,
+  "scratch-double": 22,
+  "scratch-sweep": 28,
+  "tail-sweep": 22
+ },
+ "banb": {
+  "continuous-horn-sweep": 51,
+  "headbutt": 27,
+  "horn-crush": 51,
+  "horn-raise": 51,
+  "pounce": 51,
+  "rush": 63,
+  "rush-end-slam-rock": 53,
+  "rush-end-throw-tree": 72,
+  "rush-rock": 63,
+  "rush-tree": 72,
+  "rush-tree-tip": 36,
+  "side-tackle": 51,
+  "stomp": 17,
+  "tail-sweep": 27,
+  "throw-rock": 53,
+  "turn-attack": 27
+ },
+ "g-wrog": {
+  "charge-poison-breath": [
+   35,
+   "poison"
+  ],
+  "charge-poison-breath-gas": [
+   0,
+   "poison"
+  ],
+  "first-bite": 20,
+  "poison-breath": [
+   30,
+   "poison"
+  ],
+  "rolling-tail": 27,
+  "second-bite": 30,
+  "tackle": 45,
+  "turning-bite": 30,
+  "venom": [
+   25,
+   "poison"
+  ],
+  "venom-gas": [
+   0,
+   "poison"
+  ]
+ },
+ "bish": {
+  "ground-fruit-throw-back-step": 18,
+  "ground-fruit-throw-curve": 27,
+  "ground-fruit-throw-side-step-paralysis": [
+   18,
+   "paralysis"
+  ],
+  "ground-fruit-throw-side-step-poison": [
+   18,
+   "poison"
+  ],
+  "ground-fruit-throw-straight": 45,
+  "ground-fruit-throw-tail-strike-paralysis": [
+   28,
+   "paralysis"
+  ],
+  "ground-fruit-throw-tail-strike-paralysis-gas": [
+   0,
+   "paralysis"
+  ],
+  "ground-fruit-throw-tail-strike-poison": [
+   28,
+   "poison"
+  ],
+  "ground-fruit-throw-tail-strike-poison-gas": [
+   0,
+   "poison"
+  ],
+  "ground-gliding-attack": 38,
+  "ground-scratch": 21,
+  "ground-somersault": 52,
+  "ground-tail-rush": 38,
+  "ground-tail-strike": 49,
+  "ground-tail-sweep": 45,
+  "ground-tail-sweep-combo-strike": 35,
+  "tail-stand-fluits-throw-default": 22,
+  "tail-stand-fluits-throw-paralysis": [
+   22,
+   "paralysis"
+  ],
+  "tail-stand-fluits-throw-poison": [
+   22,
+   "poison"
+  ],
+  "tail-stand-scratch": 31,
+  "tail-stand-tail-stamp": 42,
+  "tail-stand-whirlwind-assault": 59
+ },
+ "beot": {
+  "diving-assault-attack": 56,
+  "diving-bite": 28,
+  "diving-head-strike": 45,
+  "diving-roll-attack": 42,
+  "diving-rotate-horn-attack": 38,
+  "diving-screw-jump-attack": 66,
+  "diving-snow-common": 34,
+  "diving-tail-rush": 42,
+  "gorund-bite": 28,
+  "gorund-body-press": 38,
+  "gorund-side-tackle": 31,
+  "gorund-tail-roll": 31
+ },
+ "nami": {
+  "bite": 44,
+  "body-press": 48,
+  "explosion-normal-spark": 25,
+  "explosion-normal-steam": 45,
+  "explosion-strong-spark": 15,
+  "explosion-strong-steam": 85,
+  "explosion-weak-spark": 16,
+  "explosion-weak-steam": 32,
+  "scratch": 25,
+  "spark-pounce": 62,
+  "spark-stomp": 58,
+  "spark-wing-aerial": 40,
+  "spark-wing-ground": 40,
+  "tidal-wave": 42,
+  "water-breath": 32,
+  "water-breath-head": 12,
+  "water-laser": 38,
+  "water-laser-blast": 45,
+  "water-spray": 28,
+  "wing-sweep": 34
+ },
+ "f-anja": {
+  "charge-attack": [
+   73,
+   50
+  ],
+  "double-sweep-bite": [
+   40,
+   43
+  ],
+  "front-bite-spark": 30,
+  "nose-breath": 21,
+  "nose-breath-spark": 26,
+  "nose-breath-spark-strong": 31,
+  "rush-bite-spark": 45,
+  "rush-bite-spark-strong": 49,
+  "spark-add": 17,
+  "spark-bite-strong": 60,
+  "triple-nose-breath": 19,
+  "triple-nose-breath-strong": 25
+ }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "mhnow-codex",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --pool=threads --poolOptions.threads.singleThread=true",
+    "data:mhnow": "node scripts/build-mhnow-data.mjs",
+    "data:mhnow-icons": "node scripts/download-mhnow-monster-icons.mjs",
+    "validate:mhnow": "node scripts/validate-mhn-quest-resolve.mjs"
+  },
+  "dependencies": {
+    "next": "^15.5.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "eslint": "^9.35.0",
+    "eslint-config-next": "^15.5.4",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

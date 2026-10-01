@@ -1,0 +1,19 @@
+/* 不載入 Tailwind 的 preflight：畫面依賴瀏覽器預設樣式（標題粗體、段落間距、按鈕外框…），
+   重置掉會整個走樣。只取 theme 與 utilities，掃描範圍限定 app/ 與 src/。 */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "../app";
+@source "../src";
+
+/* 放在 base layer，utility class 才蓋得過（沒分層的樣式在 CSS layers 裡優先權最高）。 */
+@layer base {
+  *{box-sizing:border-box}
+  :root{color-scheme:light}
+  body{margin:0;font-family:Arial,"Microsoft JhengHei",sans-serif}
+  button,a,input{-webkit-tap-highlight-color:transparent}
+  button{font:inherit;cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #c0863f;outline-offset:4px}
+  a{color:inherit;text-decoration:none}
+}
