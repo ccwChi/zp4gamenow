@@ -2,6 +2,7 @@
 
 import { assetPath } from "./assetPath";
 import { FloatingPicker } from "./FloatingPicker";
+import { SERIES_SORT_KEY, SERIES_SORT_OPTIONS, parseSeriesSort, sortSeries, type SeriesSort } from "./seriesSort";
 import { PLANNED_GEAR_KEY, parsePlannedGear, type PlannedGear } from "./plannedGear";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -22,7 +23,7 @@ type WeaponTraits = {
   kinsect?: { label: string; value: string }[];
 };
 /** weaponSkills：技能跟通用武器不同的武器種類（如碎龍的輕／重弩），有的話整份取代 skills.weapon。 */
-type Series = { key: string; name: string; unlock: number; weaponTypes: string[]; hasArmor: boolean; skills: Record<string, SeriesSkill[]>; weaponSkills?: Record<string, SeriesSkill[]>; traits: Record<string, WeaponTraits>; slots?: Partial<Record<ArmorSlot, number[]>> };
+type Series = { key: string; name: string; id?: number; weaponElements?: string[]; unlock: number; weaponTypes: string[]; hasArmor: boolean; skills: Record<string, SeriesSkill[]>; weaponSkills?: Record<string, SeriesSkill[]>; traits: Record<string, WeaponTraits>; slots?: Partial<Record<ArmorSlot, number[]>> };
 
 /** 某系列某部位的技能；武器要看種類，有專屬技能就用專屬的。 */
 export function seriesSkills(series: Series, slot: string, weaponType?: string): SeriesSkill[] {
@@ -192,7 +193,8 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
   series: Series[]; value: string; onPick: (key: string) => void; icons: Record<string, string>;
   display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string;
 }) {
-  const visible = searchSeries(series, query, slot);
+  const ranks = new Map(series.map((item, position) => [item.key, position]));
+  const visible = searchSeries(series, query, slot).sort((a, b) => ranks.get(a.item.key)! - ranks.get(b.item.key)!);
   const modeButton = (mode: "image" | "name", label: string) => <button
     className={cx("border-0 py-[5px] px-3 rounded-[5px]", display === mode ? "bg-white text-[#253229] shadow-[0_1px_4px_#ccd1ca]" : "bg-transparent text-[#687168]")}
     onClick={() => onDisplay(mode)}>{label}</button>;
@@ -1039,7 +1041,18 @@ export default function MhnowApp() {
     ]).then(([indexData, iconData, driftData]: [SeriesIndex, Record<string, string>, Driftstones]) => { setIndex(indexData); setIcons(iconData); setDriftstones(driftData); });
   }, []);
 
-  const allSeries = useMemo(() => (index?.series ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")), [index]);
+  const [seriesSort, setSeriesSort] = useState<SeriesSort>("name");
+  const [sortRestored, setSortRestored] = useState(false);
+  const [sortStorageError, setSortStorageError] = useState(false);
+  useEffect(() => {
+    try { setSeriesSort(parseSeriesSort(localStorage.getItem(SERIES_SORT_KEY))); } catch { setSortStorageError(true); }
+    setSortRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!sortRestored) return;
+    try { localStorage.setItem(SERIES_SORT_KEY, seriesSort); setSortStorageError(false); } catch { setSortStorageError(true); }
+  }, [seriesSort, sortRestored]);
+  const allSeries = useMemo(() => sortSeries(index?.series ?? [], seriesSort), [index, seriesSort]);
   const seriesBy = useMemo(() => Object.fromEntries(allSeries.map((item) => [item.key, item])), [allSeries]);
   const weaponTypeName = (type: string) => WEAPON_NAMES[type] ?? index?.weaponTypes[type] ?? type;
   const slotName = (slot: ArmorSlot) => SLOT_NAMES[slot] ?? index?.slots[slot] ?? slot;
@@ -1161,6 +1174,16 @@ export default function MhnowApp() {
     </header>
     <nav className="flex flex-wrap justify-center gap-2 p-3 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("planned", "預計製作裝備")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
 
+    <div className="flex flex-wrap justify-center items-center gap-2 px-4 py-2 text-[12px] text-[#687168]">
+      <label className="flex items-center gap-2">魔物排序
+        <select value={seriesSort} onChange={(event) => setSeriesSort(parseSeriesSort(event.target.value))} className="rounded-md border border-[#d8d0bd] bg-white p-2 text-[#28352e]">
+          {Object.entries(SERIES_SORT_OPTIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      <span>套用至所有魔物選單</span>
+      {seriesSort === "element" ? <span className="basis-full text-center">無屬性 → 火 → 水 → 雷 → 冰 → 龍 → 狀態異常 → 多屬性 → 無武器</span> : null}
+      {sortStorageError ? <span role="status">無法儲存排序偏好。</span> : null}
+    </div>
     {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；比 340px 窄（手機）就一欄滿版。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
     {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:pb-7 grid gap-3 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))]">

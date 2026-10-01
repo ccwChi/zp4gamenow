@@ -153,6 +153,8 @@ for (const [key, config] of Object.entries(data.set)) {
 
   index.push({
     key,
+    id: config.id,
+    weaponElements: [...new Set(weaponTypes.map((type) => config.eff?.[type] ?? config.eff?.all ?? "white"))],
     name: zh["monster-name"][key] ?? key,
     unlock: config.unlock ?? 1,
     weaponTypes,
