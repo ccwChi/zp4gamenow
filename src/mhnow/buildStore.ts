@@ -23,6 +23,17 @@ export type Build = {
 };
 export type BuildState = { active: string; builds: Build[] };
 
+/** Move a build beside another without changing identities, settings, or active selection. */
+export function moveBuild(state: BuildState, id: string, targetId: string, side: "before" | "after"): BuildState {
+  if (id === targetId) return state;
+  const build = state.builds.find((entry) => entry.id === id);
+  if (!build || !state.builds.some((entry) => entry.id === targetId)) return state;
+  const builds = state.builds.filter((entry) => entry.id !== id);
+  const position = builds.findIndex((entry) => entry.id === targetId) + (side === "after" ? 1 : 0);
+  builds.splice(position, 0, build);
+  return { ...state, builds };
+}
+
 export const MAX_BUILDS = 30;
 export const STORAGE_KEY = "mhnow.builds.v1";
 const MAX_NAME = 20;

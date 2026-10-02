@@ -2,7 +2,9 @@
 
 import { assetPath } from "./assetPath";
 import { FloatingPicker } from "./FloatingPicker";
-import { PLANNED_GEAR_KEY, parsePlannedGear, type PlannedGear } from "./plannedGear";
+import { moveBuild } from "./buildStore";
+import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
+import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, type PlannedGear } from "./plannedGear";
 import { DEFAULT_MATERIAL_DISCOUNT, MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, serializeMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -189,9 +191,9 @@ export function searchSeries(series: Series[], query: string, slot?: string): { 
 }
 
 /** slot：配裝時正在選的部位，給技能搜尋用；計算器不分部位就不傳，只搜名稱。value 給陣列就是複選（素材減免用）。 */
-function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot }: {
+function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot, placeholder }: {
   series: Series[]; value: string | string[]; onPick: (key: string) => void; icons: Record<string, string>;
-  display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string;
+  display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string; placeholder?: string;
 }) {
   const ranks = new Map(series.map((item, position) => [item.key, position]));
   const visible = searchSeries(series, query, slot).sort((a, b) => ranks.get(a.item.key)! - ranks.get(b.item.key)!);
@@ -201,7 +203,7 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
   return <div>
     <div className="flex items-center justify-between mb-[9px] text-[12px] text-[#687168] max-[620px]:flex-wrap max-[620px]:gap-2">
       <span>① 選擇魔物（{visible.length}）</span>
-      <input aria-label="搜尋" value={query} onChange={(event) => onQuery(event.target.value)} placeholder={slot ? "搜尋魔物、裝備或技能" : "搜尋魔物或裝備"}
+      <input aria-label="搜尋" value={query} onChange={(event) => onQuery(event.target.value)} placeholder={placeholder ?? (slot ? "搜尋魔物、裝備或技能" : "搜尋魔物或裝備")}
         className="flex-1 min-w-0 mx-3 my-0 py-2 px-[11px] border border-[#dfe2dc] rounded-[7px] bg-[#f8f8f5] text-[13px] outline-none max-[620px]:order-3 max-[620px]:basis-full max-[620px]:m-0" />
       <div className="flex bg-[#eef0ed] rounded-md p-0.5">{modeButton("image", "圖片")}{modeButton("name", "名稱")}</div>
     </div>
@@ -593,7 +595,7 @@ function MissingSummary({ builds, settings, onChange, total, loading, monsterNam
   </section>;
 }
 
-function GradeRangeCost({ rows, value, onChange, compact, allowNone }: { rows: GradeRow[]; value: GradeRange; onChange: (next: GradeRange) => void; compact?: boolean; allowNone?: boolean }) {
+function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCurrent }: { rows: GradeRow[]; value: GradeRange; onChange: (next: GradeRange) => void; compact?: boolean; allowNone?: boolean; targetForCurrent?: (current: string) => string }) {
   const currentIndex = value.current === "unforged" ? -1 : rows.findIndex((row) => row.grade === value.current);
   const target = resolveTarget(rows, value, allowNone);
   const total = calculateRange(rows, value.current, target);
@@ -603,7 +605,7 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone }: { rows: G
     const nextIndex = next === "unforged" ? -1 : rows.findIndex((row) => row.grade === next);
     // 目前階級升到目標（含）之後：配裝回到「不升級」，計算器則把目標推到下一階。
     const passed = rows.findIndex((row) => row.grade === target) <= nextIndex;
-    onChange({ current: next, target: !passed ? target : allowNone ? "" : rows[nextIndex + 1]?.grade ?? "" });
+    onChange({ current: next, target: targetForCurrent ? targetForCurrent(next) : !passed ? target : allowNone ? "" : rows[nextIndex + 1]?.grade ?? "" });
   }
   const label = cx("grid flex-1 text-[#657068]", compact ? "gap-[3px] text-[11px]" : "gap-1.5 text-[15px]");
   const select = cx("w-full border border-[#ccd3ce] bg-white text-[#17231d]", compact ? "py-[5px] px-1.5 text-[14px] rounded-md" : "p-2.5 text-[17px] rounded-lg");
@@ -734,6 +736,59 @@ function driftStonesBySkill(build: Build, rows: GearRow[], data: Driftstones | n
  * 一組配裝的卡片：頂端名稱／顯示缺少素材／刪除，接著六列裝備與技能進度條。
  * 多組並排顯示（仿 mhnow.me），所以尺寸比單組時緊湊。
  */
+function SortableBuild({ id, name, children, onMove, onStep }: {
+  id: string; name: string; children: ReactNode;
+  onMove: (target: string, side: "before" | "after") => void; onStep: (direction: number) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [drop, setDrop] = useState<{ id: string; side: "before" | "after"; x: number; y: number; width: number; height: number } | null>(null);
+  return <div data-sort-build={id} className={cx("min-w-0 rounded-xl", dragging && "opacity-70 ring-2 ring-[#099aa5]")}>
+    <button aria-label={`移動${name}`} title="拖曳移動配裝；也可聚焦後按方向鍵前後移動"
+      className="w-full border-0 bg-transparent text-[#687168] text-[12px] py-1 cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline-[#099aa5]"
+      onKeyDown={(event) => {
+        if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
+          event.preventDefault(); onStep(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1);
+        }
+      }}
+      onPointerDown={(event) => { if (event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); setDrop(null); }}
+      onPointerMove={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        if (event.clientY < 60) window.scrollBy(0, -20);
+        else if (event.clientY > window.innerHeight - 60) window.scrollBy(0, 20);
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-sort-build]");
+        if (!target || target.dataset.sortBuild === id) { setDrop(null); return; }
+        const rect = target.getBoundingClientRect();
+        const columns = getComputedStyle(target.parentElement!).gridTemplateColumns.split(" ").length;
+        const before = columns > 1 ? event.clientX < rect.left + rect.width / 2 : event.clientY < rect.top + rect.height / 2;
+        setDrop({ id: target.dataset.sortBuild!, side: before ? "before" : "after", x: columns > 1 ? (before ? rect.left : rect.right) : rect.left, y: columns > 1 ? rect.top : (before ? rect.top : rect.bottom), width: columns > 1 ? 3 : rect.width, height: columns > 1 ? rect.height : 3 });
+      }}
+      onPointerUp={(event) => { if (drop) onMove(drop.id, drop.side); setDragging(false); setDrop(null); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+      onPointerCancel={() => { setDragging(false); setDrop(null); }}
+      onLostPointerCapture={() => { setDragging(false); setDrop(null); }}
+    >⠿ 拖曳排序</button>
+    {children}
+    {drop ? <span aria-hidden="true" className="fixed z-50 pointer-events-none bg-[#099aa5] rounded" style={{ left: drop.x, top: drop.y, width: drop.width, height: drop.height }} /> : null}
+  </div>;
+}
+
+function CurrentGradeInput({ value, title, onCommit }: { value: string; title: string; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value === "unforged" ? "" : value);
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => { setDraft(value === "unforged" ? "" : value); setInvalid(false); }, [value]);
+  function commit() {
+    const next = draft.trim();
+    if (next && !validCurrentGrade(next)) { setInvalid(true); return; }
+    setInvalid(false);
+    setDraft(next);
+    onCommit(next || "unforged");
+  }
+  return <input aria-label={`${title}目前等級`} aria-invalid={invalid} value={draft} placeholder="未設定"
+    title={invalid ? "請輸入 2-1 到 10-5，例如 6-1" : "目前等級：2-1 到 10-5；Enter 或離開欄位儲存，清空表示尚未生產"}
+    onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit}
+    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setDraft(value === "unforged" ? "" : value); setInvalid(false); } }}
+    className={cx("w-12 box-border rounded border bg-white px-0.5 py-0.5 text-center text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#099aa5]", invalid ? "border-red-500 text-red-700" : "border-[#d8d0bd] text-[#28352e]")} />;
+}
+
 function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete }: {
   build: Build; rows: GearRow[]; ctx: CardContext; editingSlot: SlotId | null; open: (slot: SlotId) => boolean; canDelete: boolean;
   onEdit: (slot: SlotId) => void; onToggle: (slot: SlotId) => void; onDrift: (slot: ArmorSlot, index: number) => void; onSkill: (name: string, level: number) => void;
@@ -764,10 +819,16 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
       return <div key={row.id}
         className={cx("relative flex flex-wrap items-stretch bg-[#fffaf0] border rounded-[10px] overflow-hidden",
           editingSlot === row.id ? "border-[#099aa5] shadow-[0_0_0_2px_rgba(9,154,165,.25)]" : "border-[#e3dac6] hover:border-[#c9bd9f]")}>
-        <button className="flex-1 min-w-0 flex items-center gap-2 py-1.5 px-2 border-0 bg-transparent text-left cursor-pointer text-[#2b332c]" title={row.title} onClick={() => onEdit(row.id)}>
-          <span className="flex-[0_0_40px] h-10 rounded-lg bg-[#ebe6d9] grid place-items-center">
+        <div className="shrink-0 flex flex-col items-center justify-center gap-1 pl-2 py-1.5">
+          {row.item ? <CurrentGradeInput key={row.itemKey} value={piece.current} title={row.title} onCommit={(current) => {
+            if (current === piece.current) return;
+            onChange((next) => setPiece(next, row.id, { item: row.itemKey, current, target: automaticTarget(row.id, row.entries, current, row.item?.unlock) }));
+          }} /> : null}
+          <button aria-label={`選擇${row.title}`} onClick={() => onEdit(row.id)} className="w-10 h-10 border-0 rounded-lg bg-[#ebe6d9] grid place-items-center cursor-pointer">
             <span className={cx("w-[26px] h-[26px] flex-[0_0_26px]", BG_ICON, !row.item && "opacity-[.45]")} style={{ backgroundImage: `url(${assetPath(row.icon)})` }} />
-          </span>
+          </button>
+        </div>
+        <button className="flex-1 min-w-0 flex items-center gap-2 py-1.5 px-2 border-0 bg-transparent text-left cursor-pointer text-[#2b332c]" title={row.title} onClick={() => onEdit(row.id)}>
           {row.item ? <>
             {ctx.icons[row.item.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item.key])})` }} /> : null}
             <span className="min-w-0 flex flex-col gap-0.5">
@@ -775,7 +836,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
               <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{Object.entries(skillsAtGrade(row.entries, MAX_GRADE)).map(([name, level]) => <span key={name}>{name} <b className="text-[#e08a00] font-bold">{level}</b></span>)}</small>
               {drifts.slice(0, row.slotGrades.length).some(Boolean) ? <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{drifts.slice(0, row.slotGrades.length).map((pick, position) => pick
                 ? <span key={position} className="inline-flex items-center gap-[3px]"><DriftHex color={driftColor(pick, ctx.driftstones)} size={11} />{pick.skill}</span> : null)}</small> : null}
-              {row.traits ? <TraitSummary traits={row.traits} /> : null}
+              {row.traits && !row.itemKey.endsWith("::insect-glaive") ? <TraitSummary traits={row.traits} /> : null}
             </span>
           </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="text-[14px] font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
         </button>
@@ -796,7 +857,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
           {waived ? <p className={cx(NOTE, "mt-0 mb-1.5 text-[#087b84]")}>素材減免中：不計採集素材與尖爪。</p> : null}
           {!gradeRows ? <p className={NOTE}>升級資料載入中……</p>
             : !gradeRows.length ? <p className={NOTE}>這件裝備沒有升級資料。</p>
-              : <GradeRangeCost compact allowNone rows={gradeRows} value={piece}
+              : <GradeRangeCost compact allowNone rows={gradeRows} value={piece} targetForCurrent={(current) => automaticTarget(row.id, row.entries, current, Number(gradeRows[0].grade.split("-")[0]))}
                 onChange={(range) => onChange((next) => setPiece(next, row.id, { ...pieceOf(next, row.id, row.itemKey), ...range }))} />}
         </div> : null}
         {row.item && !isOpen && build.showMissing ? <MissingMaterials rows={gradeRows} range={piece} waived={waived} /> : null}
@@ -824,12 +885,20 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
 }
 
 /** Each weapon type must use its own skills, including overrides. */
-export function gearForSkill(series: Series[], skill: string) {
+function traitSearchText(traits?: WeaponTraits): string {
+  const strings = (value: unknown): string[] => typeof value === "string" ? [value] : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+  return strings(traits).join(" ").toLowerCase();
+}
+
+export function gearForSkill(series: Series[], skill: string, freeText = false, includeNames = false) {
+  const query = skill.trim().toLowerCase();
+  const byName = (key: string) => includeNames && !!query && !!series.find((item) => item.key === key.split("::")[0] && `${item.key} ${item.name}`.toLowerCase().includes(query));
   return series.flatMap((item) => [
-    ...(item.hasArmor ? ARMOR_SLOTS.map((slot) => ({ slot, key: item.key, title: `${item.name}${SLOT_NAMES[slot]}`, entries: seriesSkills(item, slot) })) : []),
-    ...item.weaponTypes.map((type) => ({ slot: "weapon" as const, key: `${item.key}::${type}`, title: `${item.name}${WEAPON_NAMES[type] ?? type}`, entries: seriesSkills(item, "weapon", type) })),
+    ...(item.hasArmor ? ARMOR_SLOTS.map((slot) => ({ slot, key: item.key, title: `${item.name}${SLOT_NAMES[slot]}`, entries: seriesSkills(item, slot), traits: undefined as WeaponTraits | undefined })) : []),
+    ...item.weaponTypes.map((type) => ({ slot: "weapon" as const, key: `${item.key}::${type}`, title: `${item.name}${WEAPON_NAMES[type] ?? type}`, entries: seriesSkills(item, "weapon", type), traits: item.traits[type] })),
   ]).map((gear) => ({ ...gear, level: skillsAtGrade(gear.entries, MAX_GRADE)[skill] ?? 0 }))
-    .filter((gear) => gear.level > 0).sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, "zh-Hant"));
+    .filter((gear) => freeText ? !!query && (Object.keys(skillsAtGrade(gear.entries, MAX_GRADE)).some((name) => name.toLowerCase().includes(query)) || traitSearchText(gear.traits).includes(query) || byName(gear.key)) : gear.level > 0)
+    .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, "zh-Hant"));
 }
 
 function SkillGearPicker({ series, icons, build, onPick, onClose }: {
@@ -841,7 +910,13 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
   const names = useMemo(() => [...new Set(series.flatMap((item) => [
     ...Object.values(item.skills).flat(), ...Object.values(item.weaponSkills ?? {}).flat(),
   ].map((entry) => entry.skill)))].sort((a, b) => a.localeCompare(b, "zh-Hant")), [series]);
-  const matches = useMemo(() => gearForSkill(series, skill), [series, skill]);
+  const search = query.trim() || skill;
+  const [weaponFilter, setWeaponFilter] = useState("");
+  const [armorFilter, setArmorFilter] = useState<ArmorSlot[]>([]);
+  // 武器類型與防具部位都沒選就是不過濾；有選時只列出選中的類別。
+  const anyFilter = !!weaponFilter || armorFilter.length > 0;
+  const matches = useMemo(() => gearForSkill(series, search, !!query.trim(), true).filter((gear) => !anyFilter
+    || (gear.slot === "weapon" ? !!weaponFilter && gear.key.endsWith(`::${weaponFilter}`) : armorFilter.includes(gear.slot))), [series, search, query, anyFilter, weaponFilter, armorFilter]);
   const weaponGroups = new Map<string, typeof matches>();
   for (const gear of matches.filter((gear) => gear.slot === "weapon")) {
     const key = gear.key.split("::")[0];
@@ -856,14 +931,17 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
     const selected = build.gear[gear.slot] === gear.key;
     const icon = gear.slot === "weapon" ? WEAPON_ICON[gear.key.split("::")[1]] : ARMOR_ICON[gear.slot];
     const skills = Object.entries(skillsAtGrade(gear.entries, MAX_GRADE));
+    const kinsect = gear.key.endsWith("::insect-glaive") ? gear.traits?.kinsect ?? [] : [];
     return <button key={gear.key + gear.slot} aria-pressed={selected}
-      aria-label={`${gear.title}：${skills.map(([name, level]) => `${name} ${level}`).join("、")}`}
+      aria-label={`${gear.title}：${[...skills.map(([name, level]) => `${name} ${level}`), ...kinsect.map((stat) => `${stat.label}：${stat.value}`)].join("、")}`}
       title={gear.title} onClick={() => onPick(gear.slot, gear.key)}
       className={cx("relative flex items-center gap-1.5 w-fit max-w-full min-h-11 px-2 py-1.5 text-left rounded-lg border cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#099aa5]", selected ? "border-[#099aa5] bg-[#eaf7f4] ring-1 ring-inset ring-[#099aa5]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#a89b7e]")}>
       {gear.slot !== "weapon" ? monsterIcon(gear.key) : null}
       <span aria-hidden="true" className={cx("shrink-0 w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icon)})` }} />
       <span className="min-w-0 text-[12px] leading-4 text-[#5b635c]">{skills.map(([name, level]) =>
-        <span key={name} className={cx("block break-words", name === skill && "font-bold text-[#28352e]")}>{name} {level}</span>)}</span>
+        <span key={name} className={cx("block break-words", name === skill && "font-bold text-[#28352e]")}>{name} {level}</span>)}
+        {gear.traits ? <span className="block mt-1 pt-1 border-t border-[#e3dac6]"><TraitDetail traits={gear.traits} /></span> : null}
+      </span>
       {selected ? <span aria-hidden="true" className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#099aa5] text-white text-[10px]">✓</span> : null}
     </button>;
   };
@@ -871,32 +949,40 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
   return <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={onClose}>
     <div className="h-full flex flex-col gap-2">
     <p className={cx(NOTE, "shrink-0 m-0")}>點選立即帶入，再點同一件即可取消，可連續選擇。相同部位會替換；技能等級以 G10 計算，不含漂流石。</p>
-    <section className={cx("flex flex-col min-h-0 border border-[#e3dac6] rounded-lg", open && !skill ? "flex-1" : "shrink-0")}>
+    <section className={cx("flex flex-col min-h-0 border border-[#e3dac6] rounded-lg", open && !search ? "flex-1" : "shrink-0")}>
       <button aria-expanded={open} onClick={() => setOpen(!open)} className="shrink-0 flex items-center justify-between gap-2 w-full p-2 border-0 bg-[#fffaf0] rounded-lg text-[13px] font-bold text-left cursor-pointer">
         <span>技能{skill ? `：${skill}` : ""}</span>
         <span className={cx("inline-block [transition:transform_.15s]", open && "[transform:rotate(180deg)]")}>▾</span>
       </button>
       {open ? <div className="flex flex-col min-h-0 p-2 gap-2">
-        <input aria-label="搜尋技能" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="輸入技能名稱搜尋" className="block w-full box-border p-2 border border-[#d8d0bd] rounded-md shrink-0" />
-        <div className={cx("flex flex-wrap content-start gap-1.5 overflow-auto min-h-0", skill && "max-h-[35cqh]")} aria-label="技能選擇">
-          {filtered.map((name) => <button key={name} aria-pressed={skill === name} onClick={() => { setSkill(name); setOpen(false); }}
+        <div role="group" aria-label="武器類型與防具部位" className="flex flex-wrap gap-1 shrink-0">
+          {[["", "全部"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => { const on = type ? weaponFilter === type : !anyFilter; return <button key={type} aria-pressed={on} aria-label={name} title={name} onClick={() => { setWeaponFilter(type); if (!type) setArmorFilter([]); }}
+            className={cx("rounded border w-9 h-9 flex items-center justify-center text-[11px] font-bold cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+            {type ? <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}</button>; })}
+          {ARMOR_SLOTS.map((slot) => { const on = armorFilter.includes(slot); return <button key={slot} aria-pressed={on} aria-label={SLOT_NAMES[slot]} title={SLOT_NAMES[slot]} onClick={() => setArmorFilter(on ? armorFilter.filter((entry) => entry !== slot) : [...armorFilter, slot])}
+            className={cx("rounded border w-9 h-9 flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+            <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ARMOR_ICON[slot])})` }} /></button>; })}
+        </div>
+        <input aria-label="搜尋魔物、裝備、技能或武器特色" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋魔物、裝備、技能或武器特色，例如粉塵、擴散" className="block w-full box-border p-2 border border-[#d8d0bd] rounded-md shrink-0" />
+        <div className={cx("flex flex-wrap content-start gap-1.5 overflow-auto min-h-0", search && "max-h-[20cqh]")} aria-label="技能選擇">
+          {filtered.map((name) => <button key={name} aria-pressed={skill === name} onClick={() => { setSkill(name); setQuery(""); setOpen(false); }}
             className={cx("py-1 px-2 rounded-md border text-[12px] cursor-pointer", skill === name ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>)}
-          {!filtered.length ? <p className={NOTE}>找不到符合的技能。</p> : null}
+          {!filtered.length ? <p className={cx(NOTE, "m-0")}>下方顯示符合輸入文字的裝備。</p> : null}
         </div>
       </div> : null}
     </section>
-    {skill ? <div className="flex-1 min-h-0 overflow-auto">
-      <p className="text-[13px] font-bold mt-0">{skill} · {matches.length} 件裝備</p>
-      <section className="my-2">
+    {search ? <div className="flex-1 min-h-0 overflow-auto">
+      <p className="text-[13px] font-bold mt-0">{search} · {matches.length} 件裝備</p>
+      {!anyFilter || weaponFilter ? <section className="my-2">
         <h3 className="text-[14px] mt-0 mb-2">武器</h3>
         <div className="flex flex-col gap-2">{[...weaponGroups].map(([key, gears]) =>
           <div key={key} className="flex items-start gap-2 border-b border-[#eee9df] pb-2 last:border-0">
             <div className="shrink-0 pt-1">{monsterIcon(key)}</div>
             <div className="min-w-0 flex-1 flex flex-wrap gap-1.5 p-1">{gears.map(gearCard)}</div>
           </div>)}</div>
-        {!weaponGroups.size ? <p className={NOTE}>沒有這個技能的武器。</p> : null}
-      </section>
-      {ARMOR_SLOTS.map((slot) => <section key={slot} className="my-2">
+        {!weaponGroups.size ? <p className={NOTE}>沒有符合的武器。</p> : null}
+      </section> : null}
+      {ARMOR_SLOTS.filter((slot) => !anyFilter || armorFilter.includes(slot)).map((slot) => <section key={slot} className="my-2">
         <h3 className="text-[14px] mt-0 mb-2">{SLOT_NAMES[slot]}</h3>
         <div className="flex flex-wrap gap-1.5 p-1">{matches.filter((gear) => gear.slot === slot).map(gearCard)}</div>
         {!matches.some((gear) => gear.slot === slot) ? <p className={NOTE}>此部位沒有這個技能的裝備。</p> : null}
@@ -907,86 +993,179 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
   </FloatingPicker>;
 }
 
-function PlannedGearView({ series, icons }: { series: Series[]; icons: Record<string, string> }) {
-  const [plans, setPlans] = useState<PlannedGear[]>([]);
-  const [restored, setRestored] = useState(false);
-  const [storageError, setStorageError] = useState(false);
-  const [mode, setMode] = useState<"monster" | "skill">("monster");
+function PlannedGradeInput({ label, caption, value, empty, rows, current, onCommit }: {
+  label: string; caption: string; value: string; empty: string; rows?: GradeRow[]; current?: string; onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value === empty ? "" : value);
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => { setDraft(value === empty ? "" : value); setInvalid(false); }, [value, empty]);
+  const commit = () => {
+    const next = draft.trim() || empty;
+    const index = rows?.findIndex((row) => row.grade === next) ?? -1;
+    const currentIndex = rows?.findIndex((row) => row.grade === current) ?? -1;
+    if (next !== empty && (index < 0 || (current !== undefined && index <= currentIndex))) { setInvalid(true); return; }
+    setInvalid(false);
+    if (next !== value) onCommit(next);
+  };
+  return <label className="min-w-0 text-[9px] text-[#858d86]"><span className="sr-only">{caption}</span><input aria-label={label} aria-invalid={invalid} disabled={!rows?.length} value={draft} placeholder={empty ? "未製作" : "不升級"}
+    title={invalid ? "請輸入有效階級，例如 6-1；目標須高於目前階級" : label}
+    onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit}
+    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setDraft(value === empty ? "" : value); setInvalid(false); } }}
+    className={cx("block w-full min-w-0 h-[19px] box-border px-1 py-0 text-center text-[11px] tabular-nums rounded border bg-white/80 text-[#28352e] outline-none focus:outline-none focus:ring-0 focus:shadow-none transition-colors placeholder:text-[#93998f] disabled:opacity-50", invalid ? "border-red-500" : "border-[#e3dfd2] hover:border-[#b7c5bc] focus:border-[#829c8c] focus:bg-white")} /></label>;
+}
+
+function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, ready, storageError }: {
+  series: Series[]; plans: PlannedGear[]; onChange: (plans: PlannedGear[]) => void; ctx: CardContext;
+  included: boolean; onIncluded: (value: boolean) => void; ready: boolean; storageError: boolean;
+}) {
+  const [picker, setPicker] = useState(false);
+  const [pickerKind, setPickerKind] = useState<"weapon" | "armor">("weapon");
   const [monster, setMonster] = useState("");
-  const [skill, setSkill] = useState("");
+  const [weaponFilter, setWeaponFilter] = useState("");
   const [query, setQuery] = useState("");
   const [display, setDisplay] = useState<"image" | "name">("image");
-  const [details, setDetails] = useState<Record<string, GradeRow[]>>({});
-  const [failed, setFailed] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    try { setPlans(parsePlannedGear(localStorage.getItem(PLANNED_GEAR_KEY))); }
-    catch { setStorageError(true); }
-    setRestored(true);
-  }, []);
-  useEffect(() => {
-    if (!restored) return;
-    try { localStorage.setItem(PLANNED_GEAR_KEY, JSON.stringify(plans)); setStorageError(false); }
-    catch { setStorageError(true); }
-  }, [plans, restored]);
-  const needed = [...new Set(plans.map((plan) => plan.series))].join(",");
-  useEffect(() => {
-    let cancelled = false;
-    for (const key of needed ? needed.split(",") : []) {
-      if (details[key] || failed[key]) continue;
-      fetch(assetPath(`/mhnow/series/${key}.json`))
-        .then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.json(); })
-        .then((detail: SeriesDetail) => { if (!cancelled) setDetails((state) => ({ ...state, [key]: detail.armor ?? [] })); })
-        .catch(() => { if (!cancelled) setFailed((state) => ({ ...state, [key]: true })); });
-    }
-    return () => { cancelled = true; };
-  }, [needed, details, failed]);
-  const armor = series.filter((item) => item.hasArmor);
-  const names = [...new Set(armor.flatMap((item) => ARMOR_SLOTS.flatMap((slot) => seriesSkills(item, slot).map((entry) => entry.skill))))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
-  const candidates = mode === "monster"
-    ? armor.filter((item) => item.key === monster).flatMap((item) => ARMOR_SLOTS.map((slot) => ({ item, slot })))
-    : ARMOR_SLOTS.flatMap((slot) => armor.filter((item) => (skillsAtGrade(seriesSkills(item, slot), MAX_GRADE)[skill] ?? 0) > 0).map((item) => ({ item, slot })));
-  const identity = (item: Series, slot: ArmorSlot) => <div className="flex items-center gap-2 mb-2">
-    {icons[item.key] ? <span aria-hidden="true" className={cx("block shrink-0 w-10 h-10", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} /> : null}
-    <span aria-hidden="true" className={cx("block shrink-0 w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ARMOR_ICON[slot])})` }} />
-    <h3 className="m-0 text-[14px]">{item.name}・{SLOT_NAMES[slot]}</h3>
-  </div>;
-  return <section className="max-w-[1100px] mx-auto p-4 pb-8">
-    <PageHeading eyebrow="CRAFTING PLAN" title="預計製作裝備" />
-    <div className="p-3 rounded-xl border border-[#dfe2dc] bg-white">
-      <div className="flex gap-2 mb-3">{(["monster", "skill"] as const).map((value) => <button key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setQuery(""); }} className={cx("rounded-lg border px-3 py-2 cursor-pointer", mode === value ? "bg-[#28352e] text-white border-[#28352e]" : "bg-white border-[#dfe2dc]")}>{value === "monster" ? "依魔物選擇" : "依技能選擇"}</button>)}</div>
-      {!series.length ? <p className={NOTE}>資料載入中……</p> : mode === "monster"
-        ? <MonsterPicker series={armor} value={monster} onPick={setMonster} icons={icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} />
-        : <div className="grid gap-2">
-          <input aria-label="搜尋防具技能" placeholder="輸入技能名稱搜尋" value={query} onChange={(event) => setQuery(event.target.value)} className="w-full box-border p-2 rounded-md border border-[#d8d0bd]" />
-          <label className="text-[13px]">技能<select value={skill} onChange={(event) => setSkill(event.target.value)} className="ml-2 max-w-full p-2 rounded-md border border-[#d8d0bd]">
-            <option value="">請選擇技能</option>{names.filter((name) => name.includes(query.trim()) || name === skill).map((name) => <option key={name}>{name}</option>)}
-          </select></label>
-        </div>}
-      {candidates.length ? <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))] gap-2 mt-3">{candidates.map(({ item, slot }) => {
-        const selected = plans.some((plan) => plan.series === item.key && plan.slot === slot);
-        return <article key={`${item.key}::${slot}`} className="p-3 rounded-lg border border-[#e3dac6] bg-[#fffaf0]">
-          {identity(item, slot)}
-          <SkillTiers entries={seriesSkills(item, slot)} slotGrades={item.slots?.[slot]} />
-          <p className={cx(NOTE, "my-2")}>漂流石洞位：{item.slots?.[slot]?.length ?? 0}</p>
-          <button disabled={selected || !restored} onClick={() => setPlans((state) => state.some((plan) => plan.series === item.key && plan.slot === slot) ? state : [...state, { series: item.key, slot, current: "unforged", target: "" }])} className="w-full py-2 rounded-md border border-[#099aa5] bg-white text-[#087b84] cursor-pointer disabled:opacity-50 disabled:cursor-default">{selected ? "✓ 已加入清單" : "＋ 加入製作清單"}</button>
-        </article>;
-      })}</div> : <p className={NOTE}>{mode === "monster" ? "選擇魔物後，會列出五個部位的防具。" : "選擇技能後，會列出具有該技能的防具（以 G10 計算）。"}</p>}
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [materialMonster, setMaterialMonster] = useState<string | null>(null);
+  const entriesFor = (plan: PlannedGear) => {
+    const item = series.find((entry) => entry.key === plan.series);
+    return item ? seriesSkills(item, plan.slot, plan.weaponType) : [];
+  };
+  // 單一搜尋框：魔物名稱在上方圖示格篩選；技能與武器特色命中的裝備併入下方清單，跟選中魔物的裝備一起顯示。
+  const monsterGear: PlannedGear[] = series.filter((item) => item.key === monster).flatMap((item) => [
+    ...item.weaponTypes.map((weaponType): PlannedGear => ({ series: item.key, slot: "weapon", weaponType, current: "unforged", target: "10-5" })),
+    ...(item.hasArmor ? ARMOR_SLOTS.map((slot): PlannedGear => ({ series: item.key, slot, current: "unforged", target: automaticTarget(slot, seriesSkills(item, slot), "unforged", item.unlock) })) : []),
+  ]);
+  const searchGear: PlannedGear[] = gearForSkill(series, query, true).map((gear) => {
+    const [key, weaponType] = gear.key.split("::");
+    return { series: key, slot: gear.slot, ...(weaponType ? { weaponType } : {}), current: "unforged", target: automaticTarget(gear.slot, gear.entries, "unforged", series.find((item) => item.key === key)?.unlock) };
+  });
+  const seen = new Set<string>();
+  const candidates = [...monsterGear, ...searchGear].filter((plan) => { const id = plannedGearId(plan); if (seen.has(id)) return false; seen.add(id); return true; });
+  const titleOf = (plan: PlannedGear) => `${series.find((item) => item.key === plan.series)?.name ?? plan.series}・${plan.slot === "weapon" ? WEAPON_NAMES[plan.weaponType ?? ""] ?? plan.weaponType : SLOT_NAMES[plan.slot]}`;
+  const icon = (plan: PlannedGear) => <span aria-hidden="true" className={cx("block shrink-0 w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(plan.slot === "weapon" ? WEAPON_ICON[plan.weaponType ?? ""] : ARMOR_ICON[plan.slot])})` }} />;
+  const skills = (plan: PlannedGear) => <span className="block text-[11px] text-[#566154] leading-[1.5]">{Object.entries(skillsAtGrade(entriesFor(plan), MAX_GRADE)).map(([name, level]) => <span key={name} className="block">{name} <b className="font-semibold text-[#957039] tabular-nums">{level}</b></span>)}{!entriesFor(plan).length ? "無技能" : null}{plan.slot !== "weapon" ? <span className="block mt-0.5 text-[10px] text-[#929c8d]" title="漂流石洞位">◇ {series.find((item) => item.key === plan.series)?.slots?.[plan.slot]?.length ?? 0}</span> : null}</span>;
+  const update = (plan: PlannedGear, range: GradeRange) => onChange(plans.map((entry) => plannedGearId(entry) === plannedGearId(plan) ? { ...entry, ...range } : entry));
+  const renderRow = (plan: PlannedGear) => {
+    const id = plannedGearId(plan);
+    const rows = ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor");
+    const waived = plan.slot === "weapon" && ctx.discounted.includes(plan.series);
+    return <div key={id} className={cx("group relative flex box-border rounded-lg border p-2 transition-[background-color,border-color,box-shadow] duration-150", plan.slot === "weapon" ? "w-full min-w-0 items-center gap-2 pr-7" : "w-[132px] h-[var(--plan-card-height)] flex-col", expanded[id] ? "border-[#91b4a4] bg-[#eef5ef] shadow-[0_0_0_1px_#dbe8dc]" : plan.included === false ? "border-[#e2e5de] bg-[#f4f5f1] hover:border-[#b8c7bd]" : "border-[#e3dfd1] bg-[#fffdf7] shadow-[0_1px_2px_rgba(48,63,39,.04)] hover:border-[#afc1ae] hover:shadow-[0_2px_6px_rgba(48,63,39,.09)]")}>
+      <button type="button" aria-label={`${titleOf(plan)}詳細內容`} aria-expanded={!!expanded[id]} aria-controls={`planned-detail-${id}`}
+        onClick={() => setExpanded({ [id]: true })}
+        className="absolute inset-0 w-full h-full border-0 rounded-lg bg-transparent cursor-pointer focus-visible:outline-2 focus-visible:outline-[#829c8c] focus-visible:outline-offset-1" />
+      <div className={cx("relative pointer-events-none flex items-center gap-1.5", plan.slot === "weapon" ? "w-[88px] shrink-0" : "mb-1.5")} title={titleOf(plan)}>
+        <div className="shrink-0 flex flex-col items-center justify-center gap-0.5 rounded-md bg-[#eceee4] min-h-8">
+          {plan.slot === "weapon" && ctx.icons[plan.series] ? <span className={cx("block w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[plan.series])})` }} /> : null}
+          {icon(plan)}
+        </div>
+        <div className="relative pointer-events-auto min-w-0 flex-1 grid gap-0.5">
+        <PlannedGradeInput label={`${titleOf(plan)}目前`} caption="目前" value={plan.current} empty="unforged" rows={rows}
+          onCommit={(current) => update(plan, { current, target: automaticTarget(plan.slot, entriesFor(plan), current, Number(rows?.[0]?.grade.split("-")[0] ?? 2)) })} />
+        <PlannedGradeInput label={`${titleOf(plan)}目標`} caption="目標" value={plan.target} empty="" rows={rows} current={plan.current}
+          onCommit={(target) => update(plan, { current: plan.current, target })} />
+        </div>
+      </div>
+      <div className={cx("relative pointer-events-none min-w-0 flex-1 break-words", plan.slot !== "weapon" && "mt-0.5 mb-1.5")}>{plan.slot === "weapon" ? <strong className="block text-[12px] font-semibold text-[#40543d] mb-0.5">{titleOf(plan)}</strong> : null}{skills(plan)}
+        {waived ? <span className="inline-block mt-1 rounded px-1 bg-[#e4f1e9] text-[9px] text-[#4d7b62]">素材減免</span> : null}
+      </div>
+      <label className={cx("relative flex w-fit shrink-0 items-center gap-1 text-[9px] text-[#73816f] cursor-pointer", plan.slot === "weapon" ? "flex-col sm:flex-row" : "pt-1 border-t border-[#e9ece2] pr-2")} title="納入全部素材統計">
+        <input type="checkbox" className="m-0 w-3 h-3 accent-[#648b72]" checked={plan.included !== false} onChange={(event) => onChange(plans.map((entry) => plannedGearId(entry) === id ? { ...entry, included: event.target.checked } : entry))} />納入統計
+      </label>
+      <button aria-label={`移除${titleOf(plan)}`} title="移除裝備" onClick={() => onChange(plans.filter((entry) => plannedGearId(entry) !== id))} className="absolute bottom-0.5 right-0.5 w-5 h-5 rounded border-0 bg-transparent text-[10px] text-[#a3a89e] hover:bg-[#fbe9e3] hover:text-[#b15d4b] cursor-pointer">✕</button>
+    </div>;
+  };
+  const armorKeys = [...new Set(plans.filter((plan) => plan.slot !== "weapon").map((plan) => plan.series))];
+  // Reserve the same height for every card, including empty slots. Long skill names wrap fully.
+  const cardHeight = Math.max(148, ...plans.filter((plan) => plan.slot !== "weapon").map((plan) => {
+    const lines = Object.entries(skillsAtGrade(entriesFor(plan), MAX_GRADE)).reduce((count, [name, level]) => {
+      const textWidth = Array.from(`${name} ${level}`).reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 11 : 6), 0);
+      return count + Math.ceil(textWidth / 112);
+    }, 0);
+    return 104 + Math.max(1, lines) * 17;
+  }));
+  const openPicker = (kind: "weapon" | "armor") => { setPickerKind(kind); setPicker(true); setQuery(""); };
+  const addArmor = (key: string, slot: ArmorSlot) => {
+    const item = series.find((entry) => entry.key === key);
+    if (!item || plans.some((plan) => plan.series === key && plan.slot === slot)) return;
+    onChange([...plans, { series: key, slot, current: "unforged", target: automaticTarget(slot, seriesSkills(item, slot), "unforged", item.unlock) }]);
+  };
+  return <section style={{ "--plan-card-height": `${cardHeight}px` } as React.CSSProperties} className="col-span-full justify-self-start box-border w-full max-w-[340px] min-[724px]:max-w-[692px] min-w-0 rounded-2xl p-3 border border-[#d8dfcf] bg-[linear-gradient(135deg,#f5f6ef,#edf1e7)] shadow-[0_2px_8px_rgba(40,56,35,.04)]">
+    <div className="flex flex-wrap items-center gap-2 pb-2.5 mb-2.5 border-b border-[#dce3d4]">
+      <span aria-hidden="true" className="w-1 h-5 rounded-full bg-[#68836a]" />
+      <h2 className="text-[14px] font-semibold tracking-wide text-[#344a38] m-0">待製作裝備</h2>
+      <span className="rounded-full bg-[#e2e9da] px-2 py-0.5 text-[10px] font-semibold text-[#657a5d] tabular-nums">{plans.length} 件</span>
+      <label className={cx("ml-auto text-[11px] flex items-center gap-1.5 rounded-full border px-2.5 py-1 cursor-pointer transition-colors", included ? "border-[#cfddca] bg-[#e8f0e2] text-[#53704c]" : "border-[#dce1d5] bg-white/60 text-[#939b8b]")}><input type="checkbox" className="m-0 w-3 h-3 accent-[#648b72]" checked={included} onChange={(event) => onIncluded(event.target.checked)} />納入素材總統計</label>
     </div>
-    <h2 className="text-[17px] mt-5">製作清單 · {plans.length} 件</h2>
-    {storageError ? <p role="alert" className="text-[13px] text-[#b23a30]">瀏覽器無法儲存製作清單，重新整理後可能遺失。</p> : null}
-    {!plans.length ? <p className={NOTE}>從上方加入防具，再設定目前與目標階級。</p> : null}
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,310px),1fr))] items-start gap-3">{plans.map((plan) => {
-      const item = series.find((entry) => entry.key === plan.series);
-      const rows = details[plan.series];
-      return <article key={`${plan.series}::${plan.slot}`} className="min-w-0 p-3 rounded-xl border border-[#dfe2dc] bg-white">
-        <div className="flex items-start justify-between gap-2"><div>{item ? identity(item, plan.slot) : `${plan.series}・${SLOT_NAMES[plan.slot]}`}</div>
-          <button aria-label={`移除${item?.name ?? plan.series}${SLOT_NAMES[plan.slot]}`} onClick={() => setPlans((state) => state.filter((entry) => entry.series !== plan.series || entry.slot !== plan.slot))} className="shrink-0 border-0 bg-transparent text-[#858d86] cursor-pointer p-1">✕</button></div>
-        {item ? <div className="mb-3"><SkillTiers entries={seriesSkills(item, plan.slot)} slotGrades={item.slots?.[plan.slot]} /></div> : null}
-        {failed[plan.series] ? <p className={NOTE}>升級資料載入失敗。<button onClick={() => setFailed((state) => ({ ...state, [plan.series]: false }))} className="underline cursor-pointer">重試</button></p>
-          : !rows ? <p className={NOTE}>升級資料載入中……</p> : !rows.length ? <p className={NOTE}>這件防具沒有升級資料。</p>
-          : <GradeRangeCost compact allowNone rows={rows} value={plan} onChange={(range) => setPlans((state) => state.map((entry) => entry.series === plan.series && entry.slot === plan.slot ? { ...entry, ...range } : entry))} />}
-      </article>;
-    })}</div>
+    <section className="mb-3"><h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-[#687a5f] m-0 mb-1.5">武器<span className="text-[10px] font-normal text-[#9aa58e]">{plans.filter((plan) => plan.slot === "weapon").length}</span></h3>
+      <div className="flex flex-col gap-1.5 w-full max-w-[692px]">
+        {plans.filter((plan) => plan.slot === "weapon").map(renderRow)}
+        <button disabled={!ready} onClick={() => openPicker("weapon")} className="w-full max-w-[692px] min-h-10 box-border px-3 py-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-[#c5d0bd] bg-white/30 text-[10px] text-[#88977b] hover:bg-white/80 hover:border-[#91a781] hover:text-[#526e48] transition-colors cursor-pointer"><span aria-hidden="true" className="text-xl font-light leading-5">＋</span>武器</button>
+      </div>
+    </section>
+    <section><h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-[#687a5f] m-0 mb-1.5">防具<span className="text-[10px] font-normal text-[#9aa58e]">{plans.filter((plan) => plan.slot !== "weapon").length}</span></h3>
+      <div className="flex flex-wrap items-start gap-1.5">
+        {armorKeys.map((key) => <div key={key} className="w-fit max-w-full min-w-0 rounded-xl border border-[#dfe5d7] p-1.5 bg-white/75 shadow-[0_1px_2px_rgba(48,63,39,.03)]">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#526353] mb-1.5 pb-1 border-b border-[#edf0e7]"><span className={cx("block w-6 h-6", BG_ICON)} style={ctx.icons[key] ? { backgroundImage: `url(${assetPath(ctx.icons[key])})` } : undefined} />{series.find((item) => item.key === key)?.name ?? key}
+            <button onClick={() => setMaterialMonster(key)} className="ml-auto border border-[#e0e7d8] rounded-full bg-[#f2f6ed] text-[#627b55] px-2 py-0.5 text-[10px] hover:bg-[#e5eddc] hover:border-[#bacaad] transition-colors cursor-pointer">全部素材</button>
+          </div>
+          <div className="overflow-x-auto"><div className="grid grid-cols-[repeat(5,132px)] gap-1 w-max items-start">
+            {ARMOR_SLOTS.map((slot) => {
+              const plan = plans.find((entry) => entry.series === key && entry.slot === slot);
+              return plan ? renderRow(plan) : <button key={slot} disabled={!ready} aria-label={`加入${series.find((item) => item.key === key)?.name ?? key}${SLOT_NAMES[slot]}`} onClick={() => addArmor(key, slot)} className="h-[var(--plan-card-height)] box-border p-2 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#d7ded4] bg-[#f8faf6] text-[10px] text-[#99a293] hover:border-[#9aaf9f] hover:bg-[#eef4eb] transition-colors cursor-pointer">
+                <span className={cx("block w-5 h-5 opacity-40", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ARMOR_ICON[slot])})` }} />＋ {SLOT_NAMES[slot]}
+              </button>;
+            })}
+          </div></div>
+        </div>)}
+        <div className="basis-full h-0" aria-hidden="true" />
+        <button disabled={!ready} onClick={() => openPicker("armor")} className="w-full max-w-[692px] min-h-10 box-border px-3 py-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-[#c5d0bd] bg-white/30 text-[10px] text-[#88977b] hover:bg-white/80 hover:border-[#91a781] hover:text-[#526e48] transition-colors cursor-pointer"><span aria-hidden="true" className="text-xl font-light leading-5">＋</span>魔物防具</button>
+      </div>
+    </section>
+    {plans.filter((plan) => expanded[plannedGearId(plan)]).map((plan) => <Modal key={plannedGearId(plan)} title={`${titleOf(plan)} · 詳細內容`} onClose={() => setExpanded({})}><div id={`planned-detail-${plannedGearId(plan)}`}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div><h4 className="text-[11px] text-[#7b887c] mt-0 mb-1">技能與洞位變化</h4>
+          <SkillTiers entries={entriesFor(plan)} slotGrades={plan.slot === "weapon" ? [] : series.find((item) => item.key === plan.series)?.slots?.[plan.slot]} />
+          {plan.slot === "weapon" && series.find((item) => item.key === plan.series)?.traits[plan.weaponType!] ? <div className="mt-2"><TraitDetail traits={series.find((item) => item.key === plan.series)!.traits[plan.weaponType!]} /></div> : null}
+        </div>
+        <div><h4 className="text-[11px] text-[#7b887c] mt-0 mb-1">升級素材 · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4>
+      <MissingMaterials rows={ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor")} range={plan} waived={plan.slot === "weapon" && ctx.discounted.includes(plan.series)} />
+        </div>
+      </div>
+    </div></Modal>)}
+    {materialMonster ? <Modal title={`${series.find((item) => item.key === materialMonster)?.name ?? materialMonster} · 全部素材`} onClose={() => setMaterialMonster(null)}>
+      {(() => {
+        const items = plans.filter((plan) => plan.series === materialMonster);
+        const pieces = items.map((plan) => ({ key: plannedMaterialKey(plan), rows: ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor"), range: plan }));
+        const pending = pieces.some((piece) => !piece.rows);
+        const failed = pieces.some((piece) => piece.rows?.length === 0);
+        const total = totalMissing(pieces.flatMap((piece) => piece.rows?.length ? [{ ...piece, rows: piece.rows }] : []));
+        return <>
+          <h3 className="text-[13px] mt-0">合併需求 · {total.pieces} 件 · Zenny {total.zenny.toLocaleString()}</h3>
+          <p className={NOTE}>此處列出這隻魔物所有待製作裝備；各件的勾選只控制是否納入頁面上的素材總統計。</p>
+          {pending || failed ? <p role="status" className={NOTE}>{pending ? "部分資料載入中，合計尚未完整。" : "部分升級資料無法取得，合計尚未完整。"}</p> : null}
+          <div className="grid gap-1 sm:grid-cols-2">{total.materials.map((item) => <div key={item.name} className="flex justify-between gap-2 text-[12px] bg-[#f4f5ef] rounded px-2 py-1"><span>{item.name}</span><b>× {item.quantity.toLocaleString()}</b></div>)}</div>
+          {items.map((plan) => <section key={plannedGearId(plan)} className="border-t border-[#e3e6dc] mt-3 pt-2"><h4 className="text-[12px] my-1">{titleOf(plan)} · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4><MissingMaterials rows={ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor")} range={plan} waived={plan.slot === "weapon" && ctx.discounted.includes(plan.series)} /></section>)}
+        </>;
+      })()}
+    </Modal> : null}
+    {storageError ? <p role="alert" className="text-[12px] text-red-700">無法儲存待製作裝備，重新整理後可能遺失。</p> : null}
+    {picker ? <Modal title="加入待製作裝備" onClose={() => setPicker(false)}>
+      {pickerKind === "weapon" ? <div role="group" aria-label="武器類型" className="flex flex-wrap gap-1 mb-2">
+        {[["", "全部武器"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => <button key={type} aria-pressed={weaponFilter === type} aria-label={name} title={name} onClick={() => setWeaponFilter(type)}
+          className={cx("rounded border w-9 h-9 flex items-center justify-center text-[11px] font-bold cursor-pointer", weaponFilter === type ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+          {type ? <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}</button>)}
+      </div> : null}
+      <MonsterPicker series={series.filter((item) => pickerKind === "weapon" ? (weaponFilter ? item.weaponTypes.includes(weaponFilter) : item.weaponTypes.length) : item.hasArmor)} value={monster} onPick={setMonster} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} placeholder="搜尋魔物、裝備、技能或武器特色" />
+      <div className="grid gap-2 mt-2 sm:grid-cols-2">{candidates.filter((plan) => pickerKind === "weapon" ? plan.slot === "weapon" && (!weaponFilter || plan.weaponType === weaponFilter) : plan.slot !== "weapon").map((plan) => {
+        const selected = plans.some((entry) => plannedGearId(entry) === plannedGearId(plan));
+        return <button key={plannedGearId(plan)} disabled={selected || !ready} onClick={() => { onChange([...plans, plan]); if (pickerKind === "weapon") setPicker(false); }} className="border border-[#e3dac6] rounded bg-[#fffaf0] p-2 text-left cursor-pointer disabled:opacity-50">
+          <span className="flex items-center gap-1 text-[12px] font-bold">{icon(plan)}{titleOf(plan)}{selected ? " ✓" : " ＋"}</span>
+          {(() => { const traits = plan.slot === "weapon" ? series.find((item) => item.key === plan.series)?.traits[plan.weaponType!] : undefined; return traits ? <div className="my-1 pb-1 border-b border-[#efe6d2]"><TraitDetail traits={traits} /></div> : null; })()}
+          <SkillTiers entries={entriesFor(plan)} slotGrades={plan.slot === "weapon" ? [] : series.find((item) => item.key === plan.series)?.slots?.[plan.slot]} />
+        </button>;
+      })}</div>
+      {!candidates.length ? <p className={NOTE}>選擇魔物，或輸入技能、武器特色以加入裝備。</p> : null}
+    </Modal> : null}
   </section>;
 }
 
@@ -995,7 +1174,18 @@ export default function MhnowApp() {
   const [details, setDetails] = useState<Record<string, SeriesDetail>>({});
   const [failedDetails, setFailedDetails] = useState<Record<string, boolean>>({});
   const [icons, setIcons] = useState<Record<string, string>>({});
-  const [view, setView] = useState<"loadout" | "calculator" | "driftstone" | "planned">("loadout");
+  const [view, setView] = useState<"loadout" | "calculator" | "driftstone">("loadout");
+  const [plans, setPlans] = useState<PlannedGear[]>([]);
+  const [plansRestored, setPlansRestored] = useState(false);
+  const [plansStorageError, setPlansStorageError] = useState(false);
+  useEffect(() => {
+    try { setPlans(parsePlannedGear(localStorage.getItem(PLANNED_GEAR_KEY))); } catch { setPlansStorageError(true); }
+    setPlansRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!plansRestored) return;
+    try { localStorage.setItem(PLANNED_GEAR_KEY, JSON.stringify(plans)); setPlansStorageError(false); } catch { setPlansStorageError(true); }
+  }, [plans, plansRestored]);
   const [driftstones, setDriftstones] = useState<Driftstones | null>(null);
   const [display, setDisplay] = useState<"image" | "name">("image");
 
@@ -1083,7 +1273,7 @@ export default function MhnowApp() {
     ? (calcSeries ? [calcSeries] : [])
     : [...builds.builds.flatMap((build) => rowsByBuild[build.id].flatMap((row) => (row.item
       && (openTiers[`${build.id}:${row.id}`] || (build.showMissing && pieceOf(build, row.id, row.itemKey).target)) ? [row.item.key] : []))),
-    ...statsPlan.map((entry) => entry.series)])].join(",");
+    ...statsPlan.map((entry) => entry.series), ...plans.map((plan) => plan.series)])].join(",");
   useEffect(() => {
     for (const key of neededSeries ? neededSeries.split(",") : []) {
       if (details[key] || failedDetails[key]) continue;
@@ -1106,7 +1296,11 @@ export default function MhnowApp() {
     return rows && kind !== "armor" && discounted.includes(key) ? waiveGatherMaterials(rows) : rows;
   };
   const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor: loadoutRowsFor, discounted };
-  const statsPieces = statsPlan.map(({ row, series, piece }) => ({ key: `${row.id}|${row.itemKey}`, rows: loadoutRowsFor(series, row.kind), range: piece }));
+  const plansIncluded = !stats.excludedBuilds.includes(PLANNED_STATS_ID);
+  const statsPieces = [
+    ...statsPlan.map(({ row, series, piece }) => ({ key: `${row.id}|${row.itemKey}`, rows: loadoutRowsFor(series, row.kind), range: piece })),
+    ...(stats.open && plansIncluded ? plans.filter((plan) => plan.target && plan.included !== false).map((plan) => ({ key: plannedMaterialKey(plan), rows: loadoutRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor"), range: plan })) : []),
+  ];
   const statsTotal = totalMissing(statsPieces.flatMap((piece) => (piece.rows?.length ? [{ ...piece, rows: piece.rows }] : [])));
   const statsLoading = statsPieces.filter((piece) => !piece.rows).length;
 
@@ -1183,10 +1377,9 @@ export default function MhnowApp() {
   return <main className="min-h-screen bg-[#f4f3ee] text-[#222823]">
     <header className="h-[68px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
       <span className="hidden" />
-      <div className="text-left max-[720px]:hidden"><strong className="text-[17px]">MHNow 配裝工具</strong><span className="hidden">裝備與素材規劃</span></div>
-      <a className="text-right text-[14px] text-[#687168]" href="" target="_blank" rel="noreferrer"> ↗</a>
+      <div className="text-left max-[720px]:hidden"><strong className="text-[17px]">好用請誇獎我 不好用就算了</strong></div>
     </header>
-    <nav className="flex flex-wrap justify-center gap-2 p-3 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("planned", "預計製作裝備")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
+    <nav className="flex flex-wrap justify-center gap-2 p-3 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
 
     {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；比 340px 窄（手機）就一欄滿版。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
@@ -1224,18 +1417,28 @@ export default function MhnowApp() {
         {discounted.length ? <button onClick={() => setDiscounted([])} className="ml-auto border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline">全部清除</button> : null}
         {discountStorageError ? <span role="alert" className="basis-full text-[#b23a30]">瀏覽器無法儲存素材減免設定，重新整理後可能遺失。</span> : null}
       </section> : null}
-      {stats.open ? <MissingSummary builds={builds.builds} settings={stats} onChange={setStats} total={statsTotal} loading={statsLoading} monsterName={(key) => seriesBy[key]?.name ?? key} /> : null}
+      {stats.open ? <MissingSummary builds={[...builds.builds, ...(plans.length ? [{ id: PLANNED_STATS_ID, name: "待製作裝備", gear: {}, drifts: {}, pieces: {}, showMissing: false }] : [])]} settings={stats} onChange={setStats} total={statsTotal} loading={statsLoading} monsterName={(key) => seriesBy[key]?.name ?? key} /> : null}
 
-      {builds.builds.map((build) => <BuildCard key={build.id} build={build} rows={rowsByBuild[build.id]} ctx={cardContext}
+      {builds.builds.map((build) => <SortableBuild key={build.id} id={build.id} name={build.name}
+        onMove={(target, side) => setBuilds((state) => moveBuild(state, build.id, target, side))}
+        onStep={(direction) => setBuilds((state) => {
+          const index = state.builds.findIndex((entry) => entry.id === build.id);
+          const target = state.builds[index + direction];
+          return target ? moveBuild(state, build.id, target.id, direction < 0 ? "before" : "after") : state;
+        })}>
+        <BuildCard build={build} rows={rowsByBuild[build.id]} ctx={cardContext}
         editingSlot={editing?.build === build.id ? editing.slot : null} open={(slot) => !!openTiers[`${build.id}:${slot}`]} canDelete={builds.builds.length > 1}
         onEdit={(slot) => editSlot(build, slot)} onToggle={(slot) => setOpenTiers((state) => ({ ...state, [`${build.id}:${slot}`]: !state[`${build.id}:${slot}`] }))}
         onDrift={(slot, position) => setDriftPick({ build: build.id, slot, index: position })} onSkill={(name, level) => setSkillTip({ name, level })}
-        onSkillGear={() => setSkillGearBuild(build.id)} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} />)}
+        onSkillGear={() => setSkillGearBuild(build.id)} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} /></SortableBuild>)}
 
       <button aria-label="新增配裝" disabled={full} title={full ? `最多 ${MAX_BUILDS} 組` : "新增一組空白配裝"} onClick={addNewBuild}
         className="min-h-[120px] border border-dashed border-[#b5bbb5] rounded-xl bg-transparent text-[#5b635c] text-[14px] cursor-pointer hover:bg-[#ece8dc] disabled:cursor-default disabled:hover:bg-transparent">
         {full ? `已達上限 ${MAX_BUILDS} 組` : "＋ 新增配裝"}
       </button>
+
+      <PlannedGearPanel series={allSeries} plans={plans} onChange={setPlans} ctx={cardContext} included={plansIncluded} ready={plansRestored} storageError={plansStorageError}
+        onIncluded={(include) => setStats((state) => ({ ...state, excludedBuilds: include ? state.excludedBuilds.filter((id) => id !== PLANNED_STATS_ID) : [...new Set([...state.excludedBuilds, PLANNED_STATS_ID])] }))} />
 
       {skillGearBuild ? builds.builds.filter((build) => build.id === skillGearBuild).map((build) => <SkillGearPicker key={build.id} series={allSeries} icons={icons} build={build}
         onClose={() => setSkillGearBuild(null)} onPick={(slot, key) => changeBuild(build.id)((next) => {
@@ -1266,7 +1469,6 @@ export default function MhnowApp() {
       </Modal> : null}
     </section>
 
-    : view === "planned" ? <PlannedGearView series={allSeries} icons={icons} />
     : view === "calculator" ? <section className={PAGE}>
       <PageHeading eyebrow="MATERIALS" title="素材計算器" description="選擇對象與階級區間，累計中間所有升級需要的素材與 Zenny。" />
 

@@ -84,7 +84,10 @@ export function FloatingPicker({ title, onClose, children }: { title: string; on
   };
 
   if (!bounds) return null;
-  return <div role="dialog" aria-labelledby={titleId}
+  return <>
+    <button type="button" tabIndex={-1} aria-label="點擊背景關閉技能選擇" onClick={onClose}
+      className="fixed inset-0 z-40 border-0 bg-[rgba(20,26,20,.45)] cursor-default" />
+    <div role="dialog" aria-labelledby={titleId}
     onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}
     className="fixed z-40 flex flex-col bg-white border border-[#cfc7b4] rounded-xl shadow-[0_8px_40px_rgba(0,0,0,.25)] overflow-hidden"
     style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }}>
@@ -112,5 +115,5 @@ export function FloatingPicker({ title, onClose, children }: { title: string; on
           if (offset) { event.preventDefault(); setBounds(fitBounds({ ...bounds, width: bounds.width + offset[0], height: bounds.height + offset[1] }, window.innerWidth, window.innerHeight)); }
         }} className="absolute right-0 bottom-0 w-8 h-6 border-0 bg-transparent cursor-nwse-resize touch-none select-none">◢</button>
     </div>
-  </div>;
+  </div></>;
 }
