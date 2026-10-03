@@ -85,8 +85,8 @@ const BG_ICON = "bg-contain bg-center bg-no-repeat";
 const NOTE = "text-[12px] text-[#858d86] leading-[1.7]";
 /** 裝備列名稱下的小字行（技能、漂流石、武器特性），顏色各自加。 */
 const GEAR_SMALL = "flex flex-wrap gap-x-2.5 gap-y-0.5 text-[12px]";
-/** 不滿版：整頁收成一欄固定寬度置中（仿 mhnow.me）；內容寬 360px（一組裝備的寬度），左右各留 16px。 */
-const PAGE = "max-w-[392px] mx-auto my-4 px-4 pt-0 pb-8 max-[620px]:pb-7";
+/** 不滿版：整頁收成一欄固定寬度置中（仿 mhnow.me）；內容寬 360px（一組裝備的寬度），左右各留 16px（手機 8px）。 */
+const PAGE = "max-w-[392px] mx-auto my-4 px-4 pt-0 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7";
 
 /** 各頁標題：英文眉標＋標題。說明文字在 360px 寬放不下，保留在 DOM 但不顯示。 */
 function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description?: string }) {
@@ -230,13 +230,13 @@ function Modal({ title, onClose, children, narrow }: { title: string; onClose: (
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  return <div className="fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 z-50" onClick={onClose}>
+  return <div className="fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 max-[620px]:p-2 z-50" onClick={onClose}>
     <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]")} onClick={(event) => event.stopPropagation()}>
-      <div className="flex items-center justify-between py-3.5 px-[18px] border-b border-[#e5e7e2] flex-none">
+      <div className="flex items-center justify-between py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3 border-b border-[#e5e7e2] flex-none">
         <strong className="text-[15px]">{title}</strong>
         <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 text-[14px] leading-none cursor-pointer text-[#4b5d50]">✕</button>
       </div>
-      <div className="overflow-auto py-3.5 px-[18px]">{children}</div>
+      <div className="overflow-auto py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3">{children}</div>
     </div>
   </div>;
 }
@@ -559,18 +559,20 @@ function MissingSummary({ builds, settings, onChange, total, loading, monsterNam
   const chip = (active: boolean) => cx("inline-flex items-center gap-1 py-1 px-2.5 border rounded-full text-[12px] cursor-pointer max-w-[160px]",
     active ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white text-[#8b938c] border-[#d9d9d9] hover:border-[#b5bbb5]");
   const toggle = (list: string[], value: string) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
-  const label = "flex-none w-9 text-[12px] text-[#8b938c]";
-  return <section className="col-span-full flex flex-col gap-2 p-3 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
+  // 「配裝」「素材」是左欄，tag 在右欄換行，每一行的 tag 都從同一個位置開始。
+  const label = "py-1 text-[12px] leading-[18px] text-[#8b938c]";
+  const tags = "min-w-0 flex flex-wrap items-center gap-1.5";
+  return <section className="col-span-full flex flex-col gap-2 p-3 max-[620px]:p-2 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <strong className="text-[15px] text-[#2b332c]">缺少素材統計</strong>
       <span className="text-[12px] text-[#6d756e]">{total.pieces} 件裝備　Zenny <b className="text-[14px] text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
     </div>
-    <div className="flex flex-wrap items-center gap-1.5"><span className={label}>配裝</span>
+    <div className="grid grid-cols-[auto_1fr] items-start gap-x-2 gap-y-2"><span className={label}>配裝</span><div className={tags}>
       {builds.map((build) => { const on = !settings.excludedBuilds.includes(build.id); return <button key={build.id} aria-pressed={on} title={build.name}
         onClick={() => onChange((next) => ({ ...next, excludedBuilds: toggle(next.excludedBuilds, build.id) }))} className={chip(on)}>
         <span className="truncate">{build.name || "（未命名）"}</span></button>; })}
     </div>
-    {present.length ? <div className="flex flex-wrap items-center gap-1.5"><span className={label}>素材</span>
+    {present.length ? <><span className={label}>素材</span><div className={tags}>
       {present.map((key, position) => {
         if (key.startsWith("gather-")) {
           // 第一個採集類的位置放下拉，其他採集類不再各自出按鈕。
@@ -582,7 +584,8 @@ function MissingSummary({ builds, settings, onChange, total, loading, monsterNam
         return <button key={key} aria-pressed={on} onClick={() => onChange((next) => ({ ...next, hiddenCategories: toggle(next.hiddenCategories, key) }))} className={chip(on)}>
           {categoryLabel(key)}<small className="opacity-70">{counts[key]}</small></button>;
       })}
-    </div> : null}
+    </div></> : null}
+    </div>
     {loading ? <p className={cx(NOTE, "m-0")}>還有 {loading} 件裝備的升級資料載入中……</p> : null}
     {!total.pieces && !loading ? <p className={cx(NOTE, "m-0")}>勾選的配裝裡還沒有設定目標階級的裝備。展開裝備、選好目標階級就會算進來。</p>
       : present.length && !visible.length ? <p className={cx(NOTE, "m-0")}>勾選的素材類別目前都不缺；點上面的類別可以顯示其他素材。</p>
@@ -799,7 +802,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
   const anyStone = Object.keys(stones).length > 0;
   const h4 = (first?: boolean) => cx("mb-1.5 mx-0 text-[12px] text-[#6d756e] font-bold", first ? "mt-1 pt-0" : "mt-3 pt-2.5 [border-top:1px_dashed_#e8dfcb]");
   const toolButton = "flex-none py-1 px-2 border rounded-md text-[12px] cursor-pointer";
-  return <article id={`build-${build.id}`} className="min-w-0 flex flex-col gap-1.5 p-2 rounded-xl bg-[#ece8dc] border border-[#d8d0bd]">
+  return <article id={`build-${build.id}`} className="min-w-0 flex flex-col gap-1.5 p-2 max-[620px]:p-1.5 rounded-xl bg-[#ece8dc] border border-[#d8d0bd]">
     <div className="flex items-center gap-1.5">
       <input aria-label="配裝名稱" value={build.name} maxLength={20} placeholder="配裝名稱" onChange={(event) => { const name = event.target.value; onChange((next) => ({ ...next, name })); }}
         className="flex-1 min-w-0 py-1 px-2 border border-[#d8d0bd] rounded-md bg-white text-[13px] font-bold text-[#2b332c] outline-none focus:border-[#099aa5]" />
@@ -1375,15 +1378,14 @@ export default function MhnowApp() {
     className={cx("border rounded-full py-2 px-6 cursor-pointer", view === mode ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white border-[#d9d9d9]")}>{label}</button>;
 
   return <main className="min-h-screen bg-[#f4f3ee] text-[#222823]">
-    <header className="h-[68px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
-      <span className="hidden" />
-      <div className="text-left max-[720px]:hidden"><strong className="text-[17px]">好用請誇獎我 不好用就算了</strong></div>
+    <header className="h-[40px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
+      <div className="text-center"><strong className="text-[17px]">配裝紀錄</strong></div>
     </header>
-    <nav className="flex flex-wrap justify-center gap-2 p-3 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
+    <nav className="flex flex-wrap justify-center gap-2 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
 
-    {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；比 340px 窄（手機）就一欄滿版。
+    {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；手機（620px 以下）一律一欄滿版，不留兩側空白。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
-    {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:pb-7 grid gap-3 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))]">
+    {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7 grid gap-3 max-[620px]:gap-2 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))] max-[620px]:grid-cols-[minmax(0,1fr)]">
       <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <PageHeading eyebrow="LOADOUT" title="裝備配置" />
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1407,13 +1409,14 @@ export default function MhnowApp() {
         <span>{importMessage}</span>
         <button aria-label="關閉訊息" onClick={() => setImportMessage(null)} className="border-0 bg-transparent p-0 text-[14px] text-inherit cursor-pointer opacity-70 hover:opacity-100">✕</button>
       </p> : null}
-      {discounted.length || discountStorageError ? <section className="col-span-full flex flex-wrap items-center gap-1.5 py-2 px-3 rounded-xl bg-[#eef8f7] border border-[#bfe1de] text-[12px] text-[#2b332c]">
+      {discounted.length || discountStorageError ? <section className="col-span-full flex flex-wrap items-center gap-1.5 py-2 px-3 max-[620px]:px-2 rounded-xl bg-[#eef8f7] border border-[#bfe1de] text-[12px] text-[#2b332c]">
         <strong className="text-[13px] mr-1">素材減免中</strong>
         <span className="text-[#5b635c] mr-1">武器不需採集素材與尖爪：</span>
-        {discounted.map((key) => <button key={key} aria-label={`取消${seriesBy[key]?.name ?? key}的素材減免`} onClick={() => toggleDiscount(key)}
-          className="inline-flex items-center gap-1 py-0.5 pl-1 pr-2 border border-[#bfe1de] rounded-full bg-white text-[12px] cursor-pointer hover:border-[#099aa5]">
-          {icons[key] ? <span aria-hidden="true" className={cx("w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[key])})` }} /> : null}
-          {seriesBy[key]?.name ?? key}<span aria-hidden="true" className="text-[#8b938c]">✕</span></button>)}
+        {/* 只放魔物圖示省空間，名稱收進 title；點一下取消減免。沒有圖示的才顯示名稱。 */}
+        {discounted.map((key) => <button key={key} aria-label={`取消${seriesBy[key]?.name ?? key}的素材減免`} title={`${seriesBy[key]?.name ?? key}（點擊取消）`} onClick={() => toggleDiscount(key)}
+          className="group relative grid place-items-center min-w-8 h-8 p-0.5 border border-[#bfe1de] rounded-lg bg-white text-[11px] cursor-pointer hover:border-[#099aa5]">
+          {icons[key] ? <span aria-hidden="true" className={cx("w-7 h-7", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[key])})` }} /> : <span className="px-1">{seriesBy[key]?.name ?? key}</span>}
+          <span aria-hidden="true" className="absolute -top-1 -right-1 hidden group-hover:grid place-items-center w-3.5 h-3.5 rounded-full bg-[#5b635c] text-white text-[9px] leading-none">✕</span></button>)}
         {discounted.length ? <button onClick={() => setDiscounted([])} className="ml-auto border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline">全部清除</button> : null}
         {discountStorageError ? <span role="alert" className="basis-full text-[#b23a30]">瀏覽器無法儲存素材減免設定，重新整理後可能遺失。</span> : null}
       </section> : null}
@@ -1472,7 +1475,7 @@ export default function MhnowApp() {
     : view === "calculator" ? <section className={PAGE}>
       <PageHeading eyebrow="MATERIALS" title="素材計算器" description="選擇對象與階級區間，累計中間所有升級需要的素材與 Zenny。" />
 
-      <section className="block mt-2.5 p-3.5 bg-white border border-[#dfe2dc] rounded-[10px]">
+      <section className="block mt-2.5 p-3.5 max-[620px]:p-2.5 bg-white border border-[#dfe2dc] rounded-[10px]">
         {!loaded ? <p className={NOTE}>資料載入中……</p>
           : <button className="w-full flex-none flex justify-between items-center ml-0 py-3.5 px-4 text-left border border-[#28352e] bg-[#28352e] text-white rounded-lg text-[13px] cursor-pointer" onClick={() => { setCalcQuery(""); setCalcPickerOpen(true); }}>
               <span>{calcKind ? `${seriesBy[calcSeries]?.name}${calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}` : "選擇魔物與防具／武器"}</span>
