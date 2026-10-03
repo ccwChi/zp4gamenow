@@ -919,14 +919,25 @@ function traitSearchText(traits?: WeaponTraits): string {
   return strings(traits).join(" ").toLowerCase();
 }
 
-export function gearForSkill(series: Series[], skill: string, freeText = false, includeNames = false) {
-  const query = skill.trim().toLowerCase();
-  const byName = (key: string) => includeNames && !!query && !!series.find((item) => item.key === key.split("::")[0] && `${item.key} ${item.name}`.toLowerCase().includes(query));
+/**
+ * 依技能找裝備。skill 給陣列就是複選：有其中任何一個技能就列出，level 是選中技能的等級加總（排序用）。
+ * freeText：skill 當成輸入的文字，比對技能名稱、武器特色（與 includeNames 時的魔物名稱）。
+ */
+/** 搜尋文字拆成好幾個詞（空白、半形或全形逗號分隔），任一個詞符合就算（OR）。 */
+export function searchTerms(text: string): string[] {
+  return text.toLowerCase().split(/[\s,，]+/).filter(Boolean);
+}
+
+export function gearForSkill(series: Series[], skill: string | string[], freeText = false, includeNames = false) {
+  const skills = Array.isArray(skill) ? skill : [skill];
+  const terms = Array.isArray(skill) ? [] : searchTerms(skill);
+  const hit = (text: string) => terms.some((term) => text.includes(term));
+  const byName = (key: string) => includeNames && !!series.find((item) => item.key === key.split("::")[0] && hit(`${item.key} ${item.name}`.toLowerCase()));
   return series.flatMap((item) => [
     ...(item.hasArmor ? ARMOR_SLOTS.map((slot) => ({ slot, key: item.key, title: `${item.name}${SLOT_NAMES[slot]}`, entries: seriesSkills(item, slot), traits: undefined as WeaponTraits | undefined })) : []),
     ...item.weaponTypes.map((type) => ({ slot: "weapon" as const, key: `${item.key}::${type}`, title: `${item.name}${WEAPON_NAMES[type] ?? type}`, entries: seriesSkills(item, "weapon", type), traits: item.traits[type] })),
-  ]).map((gear) => ({ ...gear, level: skillsAtGrade(gear.entries, MAX_GRADE)[skill] ?? 0 }))
-    .filter((gear) => freeText ? !!query && (Object.keys(skillsAtGrade(gear.entries, MAX_GRADE)).some((name) => name.toLowerCase().includes(query)) || traitSearchText(gear.traits).includes(query) || byName(gear.key)) : gear.level > 0)
+  ]).map((gear) => { const levels = skillsAtGrade(gear.entries, MAX_GRADE); return { ...gear, level: skills.reduce((sum, name) => sum + (levels[name] ?? 0), 0) }; })
+    .filter((gear) => freeText ? Object.keys(skillsAtGrade(gear.entries, MAX_GRADE)).some((name) => hit(name.toLowerCase())) || hit(traitSearchText(gear.traits)) || byName(gear.key) : gear.level > 0)
     .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, "zh-Hant"));
 }
 
@@ -934,18 +945,23 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
   series: Series[]; icons: Record<string, string>; build: Build; onPick: (slot: SlotId, key: string) => void; onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [skill, setSkill] = useState("");
+  // 技能、武器類型、防具部位都可以複選。
+  const [chosen, setChosen] = useState<string[]>([]);
   const [open, setOpen] = useState(true);
+  const [weaponsOpen, setWeaponsOpen] = useState(true);
   const names = useMemo(() => [...new Set(series.flatMap((item) => [
     ...Object.values(item.skills).flat(), ...Object.values(item.weaponSkills ?? {}).flat(),
   ].map((entry) => entry.skill)))].sort((a, b) => a.localeCompare(b, "zh-Hant")), [series]);
-  const search = query.trim() || skill;
-  const [weaponFilter, setWeaponFilter] = useState("");
-  const [armorFilter, setArmorFilter] = useState<ArmorSlot[]>([]);
-  // 武器類型與防具部位都沒選就是不過濾；有選時只列出選中的類別。
-  const anyFilter = !!weaponFilter || armorFilter.length > 0;
-  const matches = useMemo(() => gearForSkill(series, search, !!query.trim(), true).filter((gear) => !anyFilter
-    || (gear.slot === "weapon" ? !!weaponFilter && gear.key.endsWith(`::${weaponFilter}`) : armorFilter.includes(gear.slot))), [series, search, query, anyFilter, weaponFilter, armorFilter]);
+  // 有輸入文字就照文字搜（技能、武器特色、魔物名稱）；沒輸入就列出有任一個選中技能的裝備。
+  const typed = query.trim();
+  const search = typed || chosen.join("、");
+  // 搜尋範圍：全部／只找武器／只找防具（預設只找防具）；weaponFilter 是再挑的武器種類，沒選就是全部種類。
+  const [scope, setScope] = useState<"all" | "weapon" | "armor">("armor");
+  const [weaponFilter, setWeaponFilter] = useState<string[]>([]);
+  const matches = useMemo(() => gearForSkill(series, typed || chosen, !!typed, true).filter((gear) => gear.slot === "weapon"
+    ? scope !== "armor" && (!weaponFilter.length || weaponFilter.includes(gear.key.split("::")[1]))
+    : scope !== "weapon"), [series, typed, chosen, scope, weaponFilter]);
+  const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
   const weaponGroups = new Map<string, typeof matches>();
   for (const gear of matches.filter((gear) => gear.slot === "weapon")) {
     const key = gear.key.split("::")[0];
@@ -968,55 +984,67 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
       {gear.slot !== "weapon" ? monsterIcon(gear.key) : null}
       <span aria-hidden="true" className={cx("shrink-0 w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icon)})` }} />
       <span className="min-w-0 text-[12px] leading-4 text-[#5b635c]">{skills.map(([name, level]) =>
-        <span key={name} className={cx("block break-words", name === skill && "font-bold text-[#28352e]")}>{name} {level}</span>)}
+        <span key={name} className={cx("block break-words", chosen.includes(name) && "font-bold text-[#28352e]")}>{name} {level}</span>)}
         {gear.traits ? <span className="block mt-1 pt-1 border-t border-[#e3dac6]"><TraitDetail traits={gear.traits} /></span> : null}
       </span>
       {selected ? <span aria-hidden="true" className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#099aa5] text-white text-[10px]">✓</span> : null}
     </button>;
   };
-  const filtered = names.filter((name) => name.toLowerCase().includes(query.trim().toLowerCase()));
+  const terms = searchTerms(query);
+  const filtered = terms.length ? names.filter((name) => terms.some((term) => name.toLowerCase().includes(term))) : names;
   return <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={onClose}>
     <div className="h-full flex flex-col gap-2">
-    <p className={cx(NOTE, "shrink-0 m-0")}>點選立即帶入，再點同一件即可取消，可連續選擇。相同部位會替換；技能等級以 G10 計算，不含漂流石。</p>
     <section className={cx("flex flex-col min-h-0 border border-[#e3dac6] rounded-lg", open && !search ? "flex-1" : "shrink-0")}>
-      <button aria-expanded={open} onClick={() => setOpen(!open)} className="shrink-0 flex items-center justify-between gap-2 w-full p-2 border-0 bg-[#fffaf0] rounded-lg text-[13px] font-bold text-left cursor-pointer">
-        <span>技能{skill ? `：${skill}` : ""}</span>
-        <span className={cx("inline-block [transition:transform_.15s]", open && "[transform:rotate(180deg)]")}>▾</span>
-      </button>
+      <div className="shrink-0 flex items-center gap-2 bg-[#fffaf0] rounded-lg">
+        <button aria-expanded={open} onClick={() => setOpen(!open)} className="flex-1 min-w-0 flex items-center justify-between gap-2 p-2 border-0 bg-transparent text-[13px] font-bold text-left cursor-pointer">
+          <span className="truncate">技能{chosen.length ? `：${chosen.join("、")}` : ""}</span>
+          <span className={cx("inline-block [transition:transform_.15s]", open && "[transform:rotate(180deg)]")}>▾</span>
+        </button>
+        {chosen.length ? <button onClick={() => setChosen([])} className="shrink-0 mr-2 border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline">清除</button> : null}
+      </div>
       {open ? <div className="flex flex-col min-h-0 p-2 gap-2">
-        <div role="group" aria-label="武器類型與防具部位" className="flex flex-wrap gap-1 shrink-0">
-          {[["", "全部"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => { const on = type ? weaponFilter === type : !anyFilter; return <button key={type} aria-pressed={on} aria-label={name} title={name} onClick={() => { setWeaponFilter(type); if (!type) setArmorFilter([]); }}
-            className={cx("rounded border w-9 h-9 flex items-center justify-center text-[11px] font-bold cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-            {type ? <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}</button>; })}
-          {ARMOR_SLOTS.map((slot) => { const on = armorFilter.includes(slot); return <button key={slot} aria-pressed={on} aria-label={SLOT_NAMES[slot]} title={SLOT_NAMES[slot]} onClick={() => setArmorFilter(on ? armorFilter.filter((entry) => entry !== slot) : [...armorFilter, slot])}
+        <input aria-label="搜尋魔物、裝備、技能或武器特色" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋魔物、技能或武器特色；多個關鍵字用空白或逗號隔開，例如：粉塵 擴散" className="block w-full box-border p-2 border border-[#d8d0bd] rounded-md shrink-0" />
+        {/* 同一列：「全」「找武器」「找防具」三選一，接著各武器種類（可複選，沒選就是全部種類）。
+            在「找防具」時點武器種類，會自動切到「找武器」。 */}
+        <div role="group" aria-label="搜尋範圍與武器種類" className="flex flex-wrap gap-1 shrink-0">
+          {([["all", "全"], ["weapon", "找武器"], ["armor", "找防具"]] as const).map(([value, label]) => { const on = scope === value; return <button key={value} aria-pressed={on}
+            onClick={() => { setScope(value); if (value !== "weapon") setWeaponFilter([]); }}
+            className={cx("h-9 min-w-9 px-2 rounded border flex items-center justify-center text-[12px] font-bold cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900] text-[#2b332c]" : "border-[#e3e6e1] bg-white text-[#5b635c]")}>{label}</button>; })}
+          {Object.entries(WEAPON_NAMES).map(([type, name]) => { const on = weaponFilter.includes(type); return <button key={type} aria-pressed={on} aria-label={name} title={name}
+            onClick={() => { setWeaponFilter(toggle(weaponFilter, type)); if (scope === "armor") setScope("weapon"); }}
             className={cx("rounded border w-9 h-9 flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-            <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ARMOR_ICON[slot])})` }} /></button>; })}
+            <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /></button>; })}
         </div>
-        <input aria-label="搜尋魔物、裝備、技能或武器特色" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋魔物、裝備、技能或武器特色，例如粉塵、擴散" className="block w-full box-border p-2 border border-[#d8d0bd] rounded-md shrink-0" />
-        <div className={cx("flex flex-wrap content-start gap-1.5 overflow-auto min-h-0", search && "max-h-[20cqh]")} aria-label="技能選擇">
-          {filtered.map((name) => <button key={name} aria-pressed={skill === name} onClick={() => { setSkill(name); setQuery(""); setOpen(false); }}
-            className={cx("py-1 px-2 rounded-md border text-[12px] cursor-pointer", skill === name ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>)}
-          {!filtered.length ? <p className={cx(NOTE, "m-0")}>下方顯示符合輸入文字的裝備。</p> : null}
+        <div className={cx("flex flex-wrap content-start gap-1.5 overflow-auto min-h-0", search && "max-h-[20cqh]")} role="group" aria-label="技能選擇（可複選）">
+          {filtered.map((name) => { const on = chosen.includes(name); return <button key={name} aria-pressed={on} onClick={() => { setChosen(toggle(chosen, name)); setQuery(""); }}
+            className={cx("py-1 px-2 rounded-md border text-[12px] cursor-pointer", on ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>; })}
         </div>
       </div> : null}
     </section>
     {search ? <div className="flex-1 min-h-0 overflow-auto">
       <p className="text-[13px] font-bold mt-0">{search} · {matches.length} 件裝備</p>
-      {!anyFilter || weaponFilter ? <section className="my-2">
-        <h3 className="text-[14px] mt-0 mb-2">武器</h3>
-        <div className="flex flex-col gap-2">{[...weaponGroups].map(([key, gears]) =>
-          <div key={key} className="flex items-start gap-2 border-b border-[#eee9df] pb-2 last:border-0">
-            <div className="shrink-0 pt-1">{monsterIcon(key)}</div>
-            <div className="min-w-0 flex-1 flex flex-wrap gap-1.5 p-1">{gears.map(gearCard)}</div>
-          </div>)}</div>
-        {!weaponGroups.size ? <p className={NOTE}>沒有符合的武器。</p> : null}
+      {scope !== "armor" ? <section className="my-2">
+        <button aria-expanded={weaponsOpen} onClick={() => setWeaponsOpen(!weaponsOpen)}
+          className="flex items-center justify-between gap-2 w-full mb-2 py-1.5 px-2.5 rounded-lg border border-[#bfe1de] bg-[#eef8f7] text-[14px] font-bold text-left text-[#1f4f4c] cursor-pointer hover:bg-[#e2f3f1]">
+          <span>武器 <small className="font-normal text-[12px] text-[#5b7a77]">{weaponGroups.size} 隻魔物・{matches.filter((gear) => gear.slot === "weapon").length} 件</small></span>
+          <span className="flex items-center gap-1.5 shrink-0 font-normal text-[12px] text-[#087b84]">{weaponsOpen ? "點擊即可收合" : "點擊即可展開"}
+            <span aria-hidden="true" className={cx("inline-block text-[14px] [transition:transform_.15s]", weaponsOpen && "[transform:rotate(180deg)]")}>▾</span></span>
+        </button>
+        {weaponsOpen ? <>
+          <div className="flex flex-col gap-2">{[...weaponGroups].map(([key, gears]) =>
+            <div key={key} className="flex items-start gap-2 border-b border-[#eee9df] pb-2 last:border-0">
+              <div className="shrink-0 pt-1">{monsterIcon(key)}</div>
+              <div className="min-w-0 flex-1 flex flex-wrap gap-1.5 p-1">{gears.map(gearCard)}</div>
+            </div>)}</div>
+          {!weaponGroups.size ? <p className={NOTE}>沒有符合的武器。</p> : null}
+        </> : null}
       </section> : null}
-      {ARMOR_SLOTS.filter((slot) => !anyFilter || armorFilter.includes(slot)).map((slot) => <section key={slot} className="my-2">
+      {scope !== "weapon" ? ARMOR_SLOTS.map((slot) => <section key={slot} className="my-2">
         <h3 className="text-[14px] mt-0 mb-2">{SLOT_NAMES[slot]}</h3>
         <div className="flex flex-wrap gap-1.5 p-1">{matches.filter((gear) => gear.slot === slot).map(gearCard)}</div>
         {!matches.some((gear) => gear.slot === slot) ? <p className={NOTE}>此部位沒有這個技能的裝備。</p> : null}
-      </section>)}
-    </div> : !open ? <p className={NOTE}>選擇技能後，會列出武器與五個防具部位的裝備。</p> : null}
+      </section>) : null}
+    </div> : null}
     <button onClick={onClose} className="shrink-0 w-full py-2 rounded-lg border-0 bg-[#28352e] text-white cursor-pointer">完成選擇</button>
     </div>
   </FloatingPicker>;

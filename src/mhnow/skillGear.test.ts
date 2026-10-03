@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { gearForSkill } from "./MhnowApp";
+import { gearForSkill, searchTerms } from "./MhnowApp";
 
 it("searches typed weapon traits per weapon type without turning traits into skills", () => {
   const series = [{
@@ -20,6 +20,20 @@ it("searches typed weapon traits per weapon type without turning traits into ski
   expect(gearForSkill(series, " ", true)).toEqual([]);
 });
 
+it("lists gear having any of several selected skills, ranked by their combined level", () => {
+  const matches = gearForSkill([{
+    key: "test", name: "測試", unlock: 1, hasArmor: true, weaponTypes: [], traits: {},
+    skills: {
+      helm: [{ skill: "攻擊", levels: [{ grade: 2, level: 1 }] }],
+      mail: [{ skill: "攻擊", levels: [{ grade: 2, level: 1 }] }, { skill: "集中", levels: [{ grade: 2, level: 2 }] }],
+      gloves: [{ skill: "集中", levels: [{ grade: 2, level: 1 }] }],
+      belt: [{ skill: "心眼", levels: [{ grade: 2, level: 3 }] }],
+    },
+  }], ["攻擊", "集中"]);
+  expect(matches.map(({ slot, level }) => [slot, level])).toEqual([["mail", 3], ["gloves", 1], ["helm", 1]]);
+  expect(gearForSkill([], [])).toEqual([]);
+});
+
 it("finds multiple armor slots and respects weapon-specific skill overrides", () => {
   const matches = gearForSkill([{
     key: "test", name: "測試", unlock: 1, hasArmor: true, weaponTypes: ["bow", "hammer"], traits: {},
@@ -38,4 +52,19 @@ it("finds multiple armor slots and respects weapon-specific skill overrides", ()
       { slot: "helm", key: "test", level: 1 },
       { slot: "weapon", key: "test::hammer", level: 1 },
   ]));
+});
+
+it("treats several typed words as OR, separated by spaces or half/full-width commas", () => {
+  const series = [{
+    key: "test", name: "測試", unlock: 1, hasArmor: true, weaponTypes: [], traits: {},
+    skills: {
+      helm: [{ skill: "攻擊", levels: [{ grade: 2, level: 1 }] }],
+      mail: [{ skill: "超會心", levels: [{ grade: 2, level: 1 }] }],
+      gloves: [{ skill: "心眼", levels: [{ grade: 2, level: 1 }] }],
+    },
+  }];
+  expect(searchTerms(" 攻擊  會心，心眼,Ab ")).toEqual(["攻擊", "會心", "心眼", "ab"]);
+  expect(searchTerms("攻擊、心眼")).toEqual(["攻擊、心眼"]);
+  expect(gearForSkill(series, "攻擊 會心", true).map((gear) => gear.slot).sort()).toEqual(["helm", "mail"]);
+  expect(gearForSkill(series, "攻擊，心眼", true).map((gear) => gear.slot).sort()).toEqual(["gloves", "helm"]);
 });

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { fitBounds } from "./FloatingPicker";
+import { fitBounds, mobileBounds } from "./FloatingPicker";
 
 it("brings a saved desktop window back into a phone viewport", () => {
   expect(fitBounds({ x: 1400, y: 800, width: 760, height: 700 }, 390, 600))
@@ -14,4 +14,8 @@ it("keeps usable minimum dimensions and prevents dragging off the top-left", () 
 it("preserves an in-bounds window", () => {
   const bounds = { x: 100, y: 80, width: 600, height: 500 };
   expect(fitBounds(bounds, 1200, 800)).toEqual(bounds);
+});
+
+it("fills a phone screen with an 8px margin regardless of the saved desktop window", () => {
+  expect(mobileBounds(390, 700)).toEqual({ x: 8, y: 8, width: 374, height: 684 });
 });
