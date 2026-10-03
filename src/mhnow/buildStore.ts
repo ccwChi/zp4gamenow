@@ -105,7 +105,7 @@ function parseDriftPick(pick: unknown): DriftPick | null {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** 只留下形狀正確的欄位；任何一組壞掉就丟掉那一組，而不是整份存檔。 */
-function parseBuild(value: unknown): Build | null {
+export function parseBuild(value: unknown): Build | null {
   if (!isRecord(value) || typeof value.id !== "string" || !value.id || typeof value.name !== "string") return null;
   const gear: Record<string, string> = {};
   if (isRecord(value.gear)) for (const [slot, key] of Object.entries(value.gear)) if (typeof key === "string" && key) gear[slot] = key;

@@ -7,7 +7,9 @@ import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
 import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, type PlannedGear } from "./plannedGear";
 import { DEFAULT_MATERIAL_DISCOUNT, MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, serializeMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
 
+import qrcode from "qrcode-generator";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { SHARE_PARAM, decodeBuildShare, encodeBuildShare, shareUrl } from "./buildShare";
 import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, pieceOf, removeBuild, saveBuilds, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
 
 /** 資料由 scripts/build-mhnow-data.mjs 產生，原生繁體中文，不需要任何翻譯層。 */
@@ -221,6 +223,28 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
       </button>; })}
     </div> : <p className={NOTE}>找不到符合的魔物。</p>}
   </div>;
+}
+
+/** QR Code（qrcode-generator 算模組，自己畫成 SVG 路徑）；只在螢幕上顯示、不會髒污，容錯用最低的 L，格子才大、好掃。 */
+function QrCode({ text, size = 260 }: { text: string; size?: number }) {
+  const { count, path } = useMemo(() => {
+    const qr = qrcode(0, "L");
+    qr.addData(text);
+    qr.make();
+    const modules = qr.getModuleCount();
+    let d = "";
+    for (let row = 0; row < modules; row++) for (let col = 0; col < modules; col++) if (qr.isDark(row, col)) d += `M${col} ${row}h1v1h-1z`;
+    return { count: modules, path: d };
+  }, [text]);
+  // 四周留 2 格白邊，掃描才認得出邊界。
+  return <svg role="img" aria-label="分享用 QR Code" width={size} height={size} viewBox={`-2 -2 ${count + 4} ${count + 4}`} shapeRendering="crispEdges" className="block max-w-full h-auto bg-white">
+    <path d={path} fill="#17231d" />
+  </svg>;
+}
+
+/** 複製到剪貼簿；不支援（非 https、權限被擋）時回傳 false，讓呼叫端提示手動複製。 */
+async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
 
 /** narrow：技能說明、漂流石這類內容少的視窗用窄版。 */
@@ -792,10 +816,10 @@ function CurrentGradeInput({ value, title, onCommit }: { value: string; title: s
     className={cx("w-12 box-border rounded border bg-white px-0.5 py-0.5 text-center text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#099aa5]", invalid ? "border-red-500 text-red-700" : "border-[#d8d0bd] text-[#28352e]")} />;
 }
 
-function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete }: {
+function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete, onShare }: {
   build: Build; rows: GearRow[]; ctx: CardContext; editingSlot: SlotId | null; open: (slot: SlotId) => boolean; canDelete: boolean;
   onEdit: (slot: SlotId) => void; onToggle: (slot: SlotId) => void; onDrift: (slot: ArmorSlot, index: number) => void; onSkill: (name: string, level: number) => void;
-  onChange: (update: (build: Build) => Build) => void; onDelete: () => void; onSkillGear: () => void;
+  onChange: (update: (build: Build) => Build) => void; onDelete: () => void; onSkillGear: () => void; onShare: () => void;
 }) {
   const skills = maxSkillsOf(build, rows);
   const stones = driftStonesBySkill(build, rows, ctx.driftstones);
@@ -808,6 +832,8 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         className="flex-1 min-w-0 py-1 px-2 border border-[#d8d0bd] rounded-md bg-white text-[13px] font-bold text-[#2b332c] outline-none focus:border-[#099aa5]" />
       <button aria-pressed={build.showMissing} title="有設定目標階級的裝備，都在下方列出還缺的素材" onClick={() => onChange((next) => ({ ...next, showMissing: !next.showMissing }))}
         className={cx(toolButton, build.showMissing ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>{build.showMissing ? "✓ " : ""}顯示缺少素材</button>
+      <button title="產生分享碼與 QR Code，別人貼上就能加入這組配裝" onClick={onShare}
+        className={cx(toolButton, "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>分享</button>
       <button disabled={!canDelete} title={canDelete ? "刪除這組配裝" : "至少要留一組"} onClick={onDelete}
         className={cx(toolButton, "border-[#e3b8b4] bg-white text-[#b23a30]")}>刪除</button>
     </div>
@@ -1224,6 +1250,24 @@ export default function MhnowApp() {
   const [importing, setImporting] = useState<{ state: BuildState; stats: StatsSettings | null } | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
+  // 分享單組配裝：sharing 是正在分享的配裝 id；receiving 是貼上（或從網址帶進來）的文字，解析後確認才加入。
+  const [sharing, setSharing] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"" | "code" | "link" | "fail">("");
+  const [receiving, setReceiving] = useState<string | null>(null);
+  // 打開分享網址（…#share=MHN1.xxx）時，等存檔讀完再跳出確認，加入後把 hash 清掉，重新整理才不會再問一次。
+  useEffect(() => {
+    if (!restored) return;
+    const check = () => {
+      if (!window.location.hash.includes(`${SHARE_PARAM}=`)) return;
+      setReceiving(window.location.hash);
+      setView("loadout");
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    };
+    check();
+    window.addEventListener("hashchange", check);
+    return () => window.removeEventListener("hashchange", check);
+  }, [restored]);
+
   // 計算器
   const [calcSeries, setCalcSeries] = useState(""); const [calcKind, setCalcKind] = useState(""); const [calcQuery, setCalcQuery] = useState("");
   const [calcRange, setCalcRange] = useState<GradeRange>({ current: "unforged", target: "" });
@@ -1354,6 +1398,16 @@ export default function MhnowApp() {
     }
     setImporting(null);
   }
+  function addSharedBuild(build: Build) {
+    const result = appendBuilds(builds, [build]);
+    if (!result.added) { setImportMessage(`匯入失敗：已經有 ${MAX_BUILDS} 組配裝，請先刪掉一組再加入。`); setReceiving(null); return; }
+    setBuilds(result.state);
+    setScrollTo(result.state.active);
+    setImportMessage(`已加入分享的配裝「${build.name || "未命名"}」。`);
+    setReceiving(null);
+  }
+  function openShare(build: Build) { setCopied(""); setSharing(build.id); }
+  async function copyShare(kind: "code" | "link", text: string) { setCopied((await copyText(text)) ? kind : "fail"); }
   function deleteBuild(build: Build) {
     if (window.confirm(`刪除「${build.name || "未命名"}」這組配裝？`)) setBuilds((state) => removeBuild(state, build.id));
   }
@@ -1396,6 +1450,8 @@ export default function MhnowApp() {
             className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯出</button>
           <button title="從匯出的 JSON 檔讀回配裝" onClick={() => fileInput.current?.click()}
             className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯入</button>
+          <button title="貼上別人分享的配裝（分享碼或網址），加在現有配裝後面" onClick={() => setReceiving("")}
+            className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">貼上分享碼</button>
           <input ref={fileInput} type="file" accept=".json,application/json" aria-label="選擇要匯入的配裝檔" className="hidden"
             onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readImport(file); }} />
           <button aria-pressed={stats.open} title="統計勾選的配裝還缺的素材" onClick={() => setStats((next) => ({ ...next, open: !next.open }))}
@@ -1433,7 +1489,7 @@ export default function MhnowApp() {
         editingSlot={editing?.build === build.id ? editing.slot : null} open={(slot) => !!openTiers[`${build.id}:${slot}`]} canDelete={builds.builds.length > 1}
         onEdit={(slot) => editSlot(build, slot)} onToggle={(slot) => setOpenTiers((state) => ({ ...state, [`${build.id}:${slot}`]: !state[`${build.id}:${slot}`] }))}
         onDrift={(slot, position) => setDriftPick({ build: build.id, slot, index: position })} onSkill={(name, level) => setSkillTip({ name, level })}
-        onSkillGear={() => setSkillGearBuild(build.id)} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} /></SortableBuild>)}
+        onSkillGear={() => setSkillGearBuild(build.id)} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} onShare={() => openShare(build)} /></SortableBuild>)}
 
       <button aria-label="新增配裝" disabled={full} title={full ? `最多 ${MAX_BUILDS} 組` : "新增一組空白配裝"} onClick={addNewBuild}
         className="min-h-[120px] border border-dashed border-[#b5bbb5] rounded-xl bg-transparent text-[#5b635c] text-[14px] cursor-pointer hover:bg-[#ece8dc] disabled:cursor-default disabled:hover:bg-transparent">
@@ -1513,6 +1569,43 @@ export default function MhnowApp() {
       <PageHeading eyebrow="DRIFTSTONE" title="漂流石" description="選顏色看來源魔物、技能與出現機率。配裝頁點裝備列右邊的 ⬡ 可以替每個洞挑技能。" />
       <DriftstoneView data={driftstones} icons={icons} onSkill={(name) => setSkillTip({ name, level: 0 })} />
     </section>}
+
+    {sharing ? builds.builds.filter((build) => build.id === sharing).map((build) => {
+      const code = encodeBuildShare(build);
+      const link = shareUrl(code, window.location.href);
+      const copyButton = "flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer";
+      return <Modal key={build.id} title={`分享「${build.name || "未命名"}」`} narrow onClose={() => setSharing(null)}>
+        <div className="flex justify-center p-2 mb-2 rounded-lg border border-[#e3dac6]"><QrCode text={link} /></div>
+        <p className={cx(NOTE, "mt-0 mb-2")}>對方用手機相機掃描就能打開並加入這組配裝；或把分享碼傳給對方，在「貼上分享碼」貼上。只分享裝備與漂流石，不含升級進度。</p>
+        <textarea readOnly aria-label="分享碼" value={code} rows={3} onFocus={(event) => event.currentTarget.select()}
+          className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md bg-[#f8f8f5] text-[11px] font-mono break-all resize-none" />
+        <div className="flex gap-2">
+          <button onClick={() => void copyShare("code", code)} className={copyButton}>{copied === "code" ? "✓ 已複製分享碼" : "複製分享碼"}</button>
+          <button onClick={() => void copyShare("link", link)} className={copyButton}>{copied === "link" ? "✓ 已複製連結" : "複製連結"}</button>
+        </div>
+        {copied === "fail" ? <p role="alert" className="mt-2 mb-0 text-[12px] text-[#b23a30]">無法自動複製，請點上面的分享碼全選後手動複製。</p> : null}
+      </Modal>;
+    }) : null}
+
+    {receiving !== null ? (() => {
+      const result = receiving.trim() ? decodeBuildShare(receiving) : null;
+      const preview = result && "build" in result ? gearRowsOf(result.build, seriesBy, weaponTypeName, slotName).filter((row) => row.item) : [];
+      const stoneCount = result && "build" in result ? Object.values(result.build.drifts).flat().filter(Boolean).length : 0;
+      return <Modal title="加入分享的配裝" narrow onClose={() => setReceiving(null)}>
+        <textarea aria-label="貼上分享碼或網址" value={receiving} rows={3} autoFocus placeholder="貼上 MHN1. 開頭的分享碼或分享網址" onChange={(event) => setReceiving(event.target.value)}
+          className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md text-[12px] break-all resize-none outline-none focus:border-[#099aa5]" />
+        {result && "error" in result ? <p role="alert" className="mt-0 mb-2 text-[12px] text-[#b23a30]">{result.error}</p> : null}
+        {result && "build" in result ? <section className="mb-3 p-2 rounded-lg bg-[#fffaf0] border border-[#e3dac6]">
+          <strong className="block mb-1 text-[13px] text-[#2b332c]">{result.build.name || "未命名"}</strong>
+          {!loaded ? <p className={cx(NOTE, "m-0")}>資料載入中……</p> : preview.map((row) => <p key={row.id} className="flex items-center gap-1.5 m-0 py-0.5 text-[12px] text-[#39423a]">
+            <span aria-hidden="true" className={cx("w-4 h-4 flex-none", BG_ICON)} style={{ backgroundImage: `url(${assetPath(row.icon)})` }} />{row.title}</p>)}
+          {stoneCount ? <p className={cx(NOTE, "m-0 mt-1")}>漂流石 {stoneCount} 顆</p> : null}
+        </section> : null}
+        <button disabled={!result || !("build" in result) || builds.builds.length >= MAX_BUILDS} onClick={() => { if (result && "build" in result) addSharedBuild(result.build); }}
+          className="w-full py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer disabled:opacity-40 disabled:cursor-default">
+          {builds.builds.length >= MAX_BUILDS ? `已達上限 ${MAX_BUILDS} 組，請先刪掉一組` : "加在現有配裝後面"}</button>
+      </Modal>;
+    })() : null}
 
     {importing ? <Modal title="匯入配裝" narrow onClose={() => setImporting(null)}>
       <p className="mt-0 mb-2 text-[13px] text-[#2b332c]">檔案裡有 <b>{importing.state.builds.length}</b> 組配裝：</p>
