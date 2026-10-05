@@ -2,6 +2,7 @@
 
 import { assetPath } from "./assetPath";
 import { FloatingPicker } from "./FloatingPicker";
+import { RecommendPicker } from "./RecommendPicker";
 import { moveBuild } from "./buildStore";
 import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
 import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, type PlannedGear } from "./plannedGear";
@@ -1265,6 +1266,7 @@ export default function MhnowApp() {
   const [openTiers, setOpenTiers] = useState<Record<string, boolean>>({});
   const [skillTip, setSkillTip] = useState<{ name: string; level: number } | null>(null);
   const [skillGearBuild, setSkillGearBuild] = useState<string | null>(null);
+  const [recommendOpen, setRecommendOpen] = useState(false);
   // 新增的那組要捲進畫面（組數多時會排到下面去）。
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   useEffect(() => {
@@ -1471,6 +1473,7 @@ export default function MhnowApp() {
       <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <PageHeading eyebrow="LOADOUT" title="裝備配置" />
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <button disabled={!loaded || !driftstones} onClick={() => setRecommendOpen(true)} className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-[#28352e] border-[#28352e] text-white disabled:opacity-50">建議配裝</button>
           <button aria-pressed={discounted.length > 0} title="活動素材減免：選了的魔物，武器升級不需要採集素材與尖爪" onClick={() => { setDiscountQuery(""); setDiscountPickerOpen(true); }}
             className={cx("py-1 px-2.5 border rounded-md text-[12px] cursor-pointer", discounted.length ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
             素材減免{discounted.length ? ` ${discounted.length}` : ""}</button>
@@ -1527,6 +1530,8 @@ export default function MhnowApp() {
       <PlannedGearPanel series={allSeries} plans={plans} onChange={setPlans} ctx={cardContext} included={plansIncluded} ready={plansRestored} storageError={plansStorageError}
         onIncluded={(include) => setStats((state) => ({ ...state, excludedBuilds: include ? state.excludedBuilds.filter((id) => id !== PLANNED_STATS_ID) : [...new Set([...state.excludedBuilds, PLANNED_STATS_ID])] }))} />
 
+      {recommendOpen && index && driftstones ? <RecommendPicker series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
+        onClose={() => setRecommendOpen(false)} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
       {skillGearBuild ? builds.builds.filter((build) => build.id === skillGearBuild).map((build) => <SkillGearPicker key={build.id} series={allSeries} icons={icons} build={build}
         onClose={() => setSkillGearBuild(null)} onPick={(slot, key) => changeBuild(build.id)((next) => {
           const gear = { ...next.gear };
