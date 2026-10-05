@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { fitBounds, mobileBounds } from "./FloatingPicker";
+import { fitBounds, mobileBounds, parseClearOnClose } from "./FloatingPicker";
 
 it("brings a saved desktop window back into a phone viewport", () => {
   expect(fitBounds({ x: 1400, y: 800, width: 760, height: 700 }, 390, 600))
@@ -18,4 +18,10 @@ it("preserves an in-bounds window", () => {
 
 it("fills a phone screen with an 8px margin regardless of the saved desktop window", () => {
   expect(mobileBounds(390, 700)).toEqual({ x: 8, y: 8, width: 374, height: 684 });
+});
+
+it("keeps data on close by default and restores each window's own clear-on-close choice", () => {
+  expect(parseClearOnClose(null)).toEqual({ recommend: false, skillGear: false });
+  expect(parseClearOnClose("broken")).toEqual({ recommend: false, skillGear: false });
+  expect(parseClearOnClose(JSON.stringify({ recommend: true, skillGear: "yes" }))).toEqual({ recommend: true, skillGear: false });
 });

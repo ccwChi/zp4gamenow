@@ -57,7 +57,7 @@ function skillsAt(entries: SeriesSkill[], grade: number) {
 }
 
 /**
- * 把方案某部位換成它的替代品。替代品的要求技能、加分技能與洞數都跟原本相同，
+ * 把方案某部位換成它的替代品。替代品換上去後排序數值、要鍊的石頭與洞數都跟原本相同（技能可能多超過上限），
  * 所以漂流石與排序數值不變，只重算技能總和與浪費等級。
  */
 export function swapPiece(recommendation: Recommendation, slot: Slot, key: string, series: RecommendSeries[], options: Pick<RecommendOptions, "grade" | "required" | "maxLevels">): Recommendation {
@@ -385,7 +385,23 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
   // 剪枝對前四項排序條件是精確的，但只看「夠不夠」，可能疊出超過上限的等級（例如五件都帶攻擊）。
   // 逐部位改成前四項不變、浪費更少的選項（含被剪掉的），直到不能再少為止。
   const sameRank = (a: Score, b: Score) => Math.abs(a.damage - b.damage) <= EPSILON && a.stoneCount === b.stoneCount && a.rareStones === b.rareStones && a.bonus === b.bonus && a.freeSlots === b.freeSlots;
+  /**
+   * 超過上限是不是「不得已」：每個超上限的要求技能，帶這個技能的每一件防具都少不得（拿掉它的等級就不到要求）。
+   * 例如手、腳各給集中 2，身體不管給 1 還是 2 都得穿，給 2 的只是多浪費 1 級，強度一樣，所以兩種都列出來。
+   * 反過來像五件都帶攻擊、其實三件就夠，就是可以避免的浪費，仍然換成浪費少的那套。
+   */
+  const unavoidable = (picks: Choice[]) => {
+    const skills = { ...base };
+    for (const pick of picks) for (const [skill, level] of Object.entries(pick.skills)) skills[skill] = (skills[skill] ?? 0) + level;
+    return targets.every(([skill, level]) => {
+      const total = skills[skill] ?? 0;
+      if (driftOnly.has(skill) || total <= cap(skill)) return true;
+      return picks.every((pick) => !pick.skills[skill] || total - pick.skills[skill] < level);
+    });
+  };
+  const variants: typeof best = [];
   for (const entry of best) {
+    const original = { ...entry };
     for (let improved = true; improved;) {
       improved = false;
       for (let depth = 0; depth < 5; depth++) {
@@ -397,9 +413,34 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
         }
       }
     }
+    // 換掉的原組合如果只是不得已多出等級，也留下來當另一個建議（排在浪費少的後面）。
+    if (entry.picks !== original.picks && unavoidable(original.picks)) variants.push(original);
   }
-  const unique = new Map(best.map((entry) => [entry.picks.map((pick) => pick.key).join("|"), entry]));
+  const unique = new Map([...best, ...variants].map((entry) => [entry.picks.map((pick) => pick.key).join("|"), entry]));
   const ranked = [...unique.values()].sort((a, b) => compare(a.score, b.score)).slice(0, limit);
+
+  /**
+   * 某部位還能換成哪些：其他部位不動、換上去後排序數值（傷害、鍊成數、稀有石、加分、空洞）與要鍊的石頭都一樣。
+   * 除了要求技能完全相同的同組替代品，也包含只是讓技能多超過上限的（例如身體集中 1 換成集中 2，總和 6/5 強度不變）。
+   * 洞數不同的不算：鍊成的石頭是照各部位洞數分配的。
+   */
+  const sameDrift = (a: Record<string, number>, b: Record<string, number>) => {
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((skill) => a[skill] === b[skill]);
+  };
+  function alternativesFor(picks: Choice[], depth: number, score: Score, drift: Record<string, number>) {
+    const current = picks[depth];
+    const keys = new Set(current.alternatives);
+    for (const choice of pools[depth].all) {
+      if (choice === current || choice.slots !== current.slots) continue;
+      const result = evaluate(picks.map((pick, index) => index === depth ? choice : pick));
+      if (!result || !sameRank(result.score, score) || !sameDrift(result.drift, drift)) continue;
+      // 同一組的系列數值都一樣，代表可以換，整組都可以換。
+      for (const key of [choice.key, ...choice.alternatives]) keys.add(key);
+    }
+    keys.delete(current.key);
+    return [...keys].sort((a, b) => a.localeCompare(b));
+  }
 
   const recommendations = ranked.map(({ score, picks, drift }, position): Recommendation => {
     const bySlot = Object.fromEntries(pools.map((pool, depth) => [pool.slot, picks[depth]])) as Record<Slot, Choice>;
@@ -415,9 +456,10 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     for (const pick of stonesNeeded) skills[pick.skill] = (skills[pick.skill] ?? 0) + 1;
     const gear: Record<string, string> = { weapon };
     const alternatives: Recommendation["alternatives"] = {};
-    for (const slot of RECOMMEND_SLOTS) {
+    for (const [depth, { slot }] of pools.entries()) {
       gear[slot] = bySlot[slot].key;
-      if (bySlot[slot].alternatives.length) alternatives[slot] = bySlot[slot].alternatives;
+      const others = alternativesFor(picks, depth, score, drift);
+      if (others.length) alternatives[slot] = others;
     }
     return {
       ...score, skills, alternatives,

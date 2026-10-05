@@ -144,6 +144,38 @@ describe("recommended loadouts", () => {
     expect(Object.values(recommendations[0].build.gear).filter((key) => key.startsWith("plain-"))).toHaveLength(2);
   });
 
+  it("also lists a build whose extra level is unavoidable, after the one with less waste", async () => {
+    // 手、腳各給集中 2（共 4），要 5 級：身體一定要穿，給 1 的剛好 5，給 2 的變 6 但強度一樣。
+    const plain = (slot: string) => ({ key: `plain-${slot}`, name: "無技能", hasArmor: true, weaponTypes: [], skills: { [slot]: [] } });
+    const series: RecommendSeries[] = [
+      { key: "weapon", name: "武器", hasArmor: false, weaponTypes: ["hammer"], skills: { weapon: [] } },
+      { key: "g", name: "手", hasArmor: true, weaponTypes: [], skills: { gloves: [entry("集中", 2)] } },
+      { key: "gr", name: "腳", hasArmor: true, weaponTypes: [], skills: { greaves: [entry("集中", 2)] } },
+      { key: "m1", name: "身1", hasArmor: true, weaponTypes: [], skills: { mail: [entry("集中", 1)] } },
+      { key: "m2", name: "身2", hasArmor: true, weaponTypes: [], skills: { mail: [entry("集中", 2)] } },
+      plain("helm"), plain("belt"),
+    ];
+    const { recommendations } = await recommendBuilds(series, stones, { weapon: "weapon::hammer", grade: 10, required: { "集中": 5 }, maxLevels: { "集中": 5 }, includeDrifts: false });
+    expect(recommendations.map((item) => [item.build.gear.mail, item.skills["集中"], item.overflow])).toEqual([["m1", 5, 0], ["m2", 6, 1]]);
+    // 換裝也找得到：身體集中 1 ↔ 集中 2 互為替代品；拿掉就不夠 5 級的手、腳沒有替代品。
+    expect(recommendations[0].alternatives).toEqual({ mail: ["m2"] });
+    expect(recommendations[1].alternatives).toEqual({ mail: ["m1"] });
+    const swapped = swapPiece(recommendations[0], "mail", "m2", series, { grade: 10, required: { "集中": 5 }, maxLevels: { "集中": 5 } });
+    expect([swapped.build.gear.mail, swapped.skills["集中"], swapped.overflow]).toEqual(["m2", 6, 1]);
+  });
+
+  it("does not offer a swap that changes the drift stones or the number of slots", async () => {
+    const series: RecommendSeries[] = [
+      { key: "weapon", name: "武器", hasArmor: false, weaponTypes: ["hammer"], skills: { weapon: [] } },
+      ...RECOMMEND_SLOTS.map((slot) => ({ key: slot, name: slot, hasArmor: true, weaponTypes: [], skills: { [slot]: [entry("攻擊", 1)] }, slots: { [slot]: [5] } })),
+      // 攻擊 2 但沒有洞：要求技能夠了，可是少一個洞，空洞數不同。
+      { key: "helm-noslot", name: "無洞頭", hasArmor: true, weaponTypes: [], skills: { helm: [entry("攻擊", 2)] } },
+    ];
+    const { recommendations } = await recommendBuilds(series, stones, { weapon: "weapon::hammer", grade: 10, required: { "攻擊": 5 }, maxLevels: { "攻擊": 5 }, includeDrifts: true });
+    expect(recommendations[0].build.gear.helm).toBe("helm");
+    expect(recommendations[0].alternatives.helm ?? []).not.toContain("helm-noslot");
+  });
+
   it("merges interchangeable pieces into one recommendation", async () => {
     const series = fixture();
     series.push({ key: "twin", name: "同款頭", hasArmor: true, weaponTypes: [], skills: { helm: [entry("攻擊", 1), entry("麻痺耐性", 1)] }, slots: { helm: [5] } });

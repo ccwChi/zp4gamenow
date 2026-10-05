@@ -8,5 +8,7 @@ const nextConfig: NextConfig = {
   output: process.env.GITHUB_PAGES === "true" ? "export" : undefined,
   basePath: process.env.NEXT_PUBLIC_BASE_PATH ?? "",
   trailingSlash: true,
+  // 每次 build（含 dev 重啟）換一個版本號，資料檔網址會帶上它，避免新程式讀到瀏覽器快取的舊資料。
+  env: { NEXT_PUBLIC_DATA_VERSION: Date.now().toString(36) },
 };
 export default nextConfig;

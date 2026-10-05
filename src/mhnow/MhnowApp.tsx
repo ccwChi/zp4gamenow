@@ -1,7 +1,8 @@
 "use client";
 
-import { assetPath } from "./assetPath";
-import { FloatingPicker } from "./FloatingPicker";
+import { assetPath, dataPath } from "./assetPath";
+import { SKILL_CELL, SkillGroups } from "./SkillGroups";
+import { CLEAR_ON_CLOSE_KEY, DEFAULT_CLEAR_ON_CLOSE, FloatingPicker, parseClearOnClose, type ClearOnClose } from "./FloatingPicker";
 import { RecommendPicker } from "./RecommendPicker";
 import { moveBuild } from "./buildStore";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
@@ -369,16 +370,17 @@ function DriftTabs({ tabs, value, onChange, big }: { tabs: { key: string; label:
 function DriftstonePicker({ data, current, onPick }: { data: Driftstones; current: DriftPick | null; onPick: (pick: DriftPick | null) => void }) {
   const [tab, setTab] = useState(current ? driftColor(current, data) : "fire");
   const color = data.colors.find((item) => item.key === tab);
-  const skillButton = (name: string, rare = false) => <button key={name} onClick={() => onPick({ skill: name, color: tab })}
-    className={cx("inline-flex items-center gap-1 py-1.5 px-2.5 border rounded-lg text-[#2b332c] text-[13px] cursor-pointer",
+  const skillButton = (name: string, rare = false, cell = false) => <button key={name} onClick={() => onPick({ skill: name, color: tab })}
+    className={cx("inline-flex items-center gap-1 py-1.5 px-2.5 border rounded-lg text-[#2b332c] text-[13px] cursor-pointer", cell && SKILL_CELL,
       current?.skill === name && driftColor(current, data) === tab ? "border-[#e08a00] bg-[#fff3dc]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#c9bd9f]")}>
     {name}{rare ? <em className="not-italic text-[#e08a00] text-[12px]">★</em> : null}
   </button>;
   return <div>
     <DriftTabs tabs={[...data.colors.map((item) => ({ key: item.key, label: item.label })), { key: "common", label: "共通" }, { key: "event", label: "神秘" }]} value={tab} onChange={setTab} />
     <div className="flex flex-wrap gap-1.5">
-      {color ? color.skills.map((skill) => skillButton(skill.name, skill.rare)) : null}
-      {tab === "common" ? data.common.map((name) => skillButton(name)) : null}
+      {/* 六色與共通依技能分類列出；神秘漂流石本來就依活動分組，維持原樣。 */}
+      {color ? <SkillGroups names={color.skills.map((skill) => skill.name)} renderSkill={(name) => skillButton(name, color.skills.find((skill) => skill.name === name)?.rare, true)} /> : null}
+      {tab === "common" ? <SkillGroups names={data.common} renderSkill={(name) => skillButton(name, false, true)} /> : null}
       {tab === "event" ? data.events.map((group) => <div key={group.key} className="flex-[0_0_100%] flex flex-wrap gap-1.5 items-center">
         <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] text-[11px]">{group.label}</small>{group.skills.map((name) => skillButton(name, mixedRare(group, name)))}
       </div>) : null}
@@ -960,8 +962,9 @@ export function gearForSkill(series: Series[], skill: string | string[], freeTex
     .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, "zh-Hant"));
 }
 
-function SkillGearPicker({ series, icons, build, onPick, onClose }: {
+function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clearOnClose, onClearOnClose, onClear }: {
   series: Series[]; icons: Record<string, string>; build: Build; onPick: (slot: SlotId, key: string) => void; onClose: () => void;
+  visible: boolean; clearOnClose: boolean; onClearOnClose: (next: boolean) => void; onClear: () => void;
 }) {
   const [query, setQuery] = useState("");
   // 技能、武器類型、防具部位都可以複選。
@@ -1011,7 +1014,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
   };
   const terms = searchTerms(query);
   const filtered = terms.length ? names.filter((name) => terms.some((term) => name.toLowerCase().includes(term))) : names;
-  return <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={onClose}>
+  return <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={onClose} open={visible} clearOnClose={clearOnClose} onClearOnClose={onClearOnClose} onClear={onClear}>
     <div className="h-full flex flex-col gap-2">
     <section className={cx("flex flex-col min-h-0 border border-[#e3dac6] rounded-lg", open && !search ? "flex-1" : "shrink-0")}>
       <div className="shrink-0 flex items-center gap-2 bg-[#fffaf0] rounded-lg">
@@ -1034,9 +1037,9 @@ function SkillGearPicker({ series, icons, build, onPick, onClose }: {
             className={cx("rounded border w-9 h-9 flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
             <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /></button>; })}
         </div>
-        <div className={cx("flex flex-wrap content-start gap-1.5 overflow-auto min-h-0", search && "max-h-[20cqh]")} role="group" aria-label="技能選擇（可複選）">
-          {filtered.map((name) => { const on = chosen.includes(name); return <button key={name} aria-pressed={on} onClick={() => { setChosen(toggle(chosen, name)); setQuery(""); }}
-            className={cx("py-1 px-2 rounded-md border text-[12px] cursor-pointer", on ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>; })}
+        <div className={cx("overflow-auto min-h-0", search && "max-h-[20cqh]")} role="group" aria-label="技能選擇（可複選）">
+          <SkillGroups names={filtered} searching={terms.length > 0} renderSkill={(name) => { const on = chosen.includes(name); return <button key={name} aria-pressed={on} onClick={() => { setChosen(toggle(chosen, name)); setQuery(""); }}
+            className={cx(SKILL_CELL, "py-1 px-2 rounded-md border text-[12px] cursor-pointer", on ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>; }} />
         </div>
       </div> : null}
     </section>
@@ -1283,8 +1286,33 @@ export default function MhnowApp() {
   const [pickSeries, setPickSeries] = useState(""); const [pickQuery, setPickQuery] = useState("");
   const [openTiers, setOpenTiers] = useState<Record<string, boolean>>({});
   const [skillTip, setSkillTip] = useState<{ name: string; level: number } | null>(null);
+  // 「依技能選全身裝備」與「建議配裝」：關閉只是藏起來，選擇與結果留著；勾了「關閉即清除資料」才在關閉時卸載清掉。
+  // skillGearBuild／recommendMounted 是有沒有掛著，skillGearOpen／recommendOpen 是有沒有顯示。
   const [skillGearBuild, setSkillGearBuild] = useState<string | null>(null);
+  const [skillGearOpen, setSkillGearOpen] = useState(false);
+  const [recommendMounted, setRecommendMounted] = useState(false);
   const [recommendOpen, setRecommendOpen] = useState(false);
+  const [clearOnClose, setClearOnClose] = useState<ClearOnClose>(DEFAULT_CLEAR_ON_CLOSE);
+  const [clearRestored, setClearRestored] = useState(false);
+  // 按「清除」就換一個 key，讓視窗內容重新掛載回到空白（視窗本身不關）。
+  const [recommendReset, setRecommendReset] = useState(0);
+  const [skillGearReset, setSkillGearReset] = useState(0);
+  useEffect(() => {
+    try { setClearOnClose(parseClearOnClose(localStorage.getItem(CLEAR_ON_CLOSE_KEY))); } catch { /* 讀不到就用預設（不清除） */ }
+    setClearRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!clearRestored) return;
+    try { localStorage.setItem(CLEAR_ON_CLOSE_KEY, JSON.stringify(clearOnClose)); } catch { /* 存不了就只在這次有效 */ }
+  }, [clearOnClose, clearRestored]);
+  function closeSkillGear() {
+    setSkillGearOpen(false);
+    if (clearOnClose.skillGear) setSkillGearBuild(null);
+  }
+  function closeRecommend() {
+    setRecommendOpen(false);
+    if (clearOnClose.recommend) setRecommendMounted(false);
+  }
   // 新增的那組要捲進畫面（組數多時會排到下面去）。
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   useEffect(() => {
@@ -1323,9 +1351,9 @@ export default function MhnowApp() {
 
   useEffect(() => {
     Promise.all([
-      fetch(assetPath("/mhnow/series-index.json")).then((response) => response.json()),
-      fetch(assetPath("/mhnow/monster-icons.json")).then((response) => response.json()),
-      fetch(assetPath("/mhnow/driftstones.json")).then((response) => response.json()),
+      fetch(dataPath("/mhnow/series-index.json")).then((response) => response.json()),
+      fetch(dataPath("/mhnow/monster-icons.json")).then((response) => response.json()),
+      fetch(dataPath("/mhnow/driftstones.json")).then((response) => response.json()),
     ]).then(([indexData, iconData, driftData]: [SeriesIndex, Record<string, string>, Driftstones]) => { setIndex(indexData); setIcons(iconData); setDriftstones(driftData); });
   }, []);
 
@@ -1372,7 +1400,7 @@ export default function MhnowApp() {
   useEffect(() => {
     for (const key of neededSeries ? neededSeries.split(",") : []) {
       if (details[key] || failedDetails[key]) continue;
-      fetch(assetPath(`/mhnow/series/${key}.json`))
+      fetch(dataPath(`/mhnow/series/${key}.json`))
         .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
         .then((detail: SeriesDetail) => setDetails((state) => ({ ...state, [detail.key]: detail })))
         .catch(() => setFailedDetails((state) => ({ ...state, [key]: true })));
@@ -1475,8 +1503,11 @@ export default function MhnowApp() {
 
   const picked = pickSeries ? seriesBy[pickSeries] : undefined;
   const full = builds.builds.length >= MAX_BUILDS;
+  /** 「建議配裝」按鈕；手機與桌機放的位置不同，各出一顆再用 className 決定哪個尺寸顯示。 */
+  const recommendButton = (visibility: string) => <button disabled={!loaded || !driftstones} onClick={() => { setRecommendMounted(true); setRecommendOpen(true); }}
+    className={cx(visibility, "shrink-0 py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-[#28352e] border-[#28352e] text-white disabled:opacity-50")}>建議配裝</button>;
 
-  const navButton = (mode: typeof view, label: string) => <button onClick={() => setView(mode)}
+  const navButton =(mode: typeof view, label: string) => <button onClick={() => setView(mode)}
     className={cx("border rounded-full py-2 px-6 cursor-pointer", view === mode ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white border-[#d9d9d9]")}>{label}</button>;
 
   return <main className="min-h-screen bg-[#f4f3ee] text-[#222823]">
@@ -1489,9 +1520,13 @@ export default function MhnowApp() {
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
     {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7 grid gap-3 max-[620px]:gap-2 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))] max-[620px]:grid-cols-[minmax(0,1fr)]">
       <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <PageHeading eyebrow="LOADOUT" title="裝備配置" />
+        {/* 手機版：標題自成一列，「建議配裝」放在標題同一列的最右邊；桌機版維持在右側工具列的第一個。 */}
+        <div className="flex items-center justify-between gap-2 max-[620px]:basis-full">
+          <PageHeading eyebrow="LOADOUT" title="裝備配置" />
+          {recommendButton("hidden max-[620px]:inline-block")}
+        </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button disabled={!loaded || !driftstones} onClick={() => setRecommendOpen(true)} className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-[#28352e] border-[#28352e] text-white disabled:opacity-50">建議配裝</button>
+          {recommendButton("max-[620px]:hidden")}
           <button aria-pressed={discounted.length > 0} title="活動素材減免：選了的魔物，武器升級不需要採集素材與尖爪" onClick={() => { setDiscountQuery(""); setDiscountPickerOpen(true); }}
             className={cx("py-1 px-2.5 border rounded-md text-[12px] cursor-pointer", discounted.length ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
             素材減免{discounted.length ? ` ${discounted.length}` : ""}</button>
@@ -1515,8 +1550,13 @@ export default function MhnowApp() {
         <button aria-label="關閉訊息" onClick={() => setImportMessage(null)} className="border-0 bg-transparent p-0 text-[14px] text-inherit cursor-pointer opacity-70 hover:opacity-100">✕</button>
       </p> : null}
       {discounted.length || discountStorageError ? <section className="col-span-full flex flex-wrap items-center gap-1.5 py-2 px-3 max-[620px]:px-2 rounded-xl bg-[#eef8f7] border border-[#bfe1de] text-[12px] text-[#2b332c]">
-        <strong className="text-[13px] mr-1">素材減免中</strong>
-        <span className="text-[#5b635c] mr-1">武器不需採集素材與尖爪：</span>
+        {/* 說明收成提示：桌機滑過、手機點一下（取得焦點）就顯示。 */}
+        <span tabIndex={0} aria-describedby="discount-tip" className="group relative mr-1 outline-none">
+          <strong className="text-[13px] underline decoration-dotted decoration-[#8b938c] underline-offset-4 cursor-help">素材減免中</strong>
+          <span id="discount-tip" role="tooltip"
+            className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 [transition:opacity_.12s] absolute left-0 top-full mt-1.5 z-30 w-max max-w-[220px] py-1 px-2 rounded-md bg-[#28352e] text-white text-[12px] font-normal leading-[1.5] shadow-[0_4px_12px_rgba(0,0,0,.2)]">
+            武器不需採集素材與尖爪</span>
+        </span>
         {/* 只放魔物圖示省空間，名稱收進 title；點一下取消減免。沒有圖示的才顯示名稱。 */}
         {discounted.map((key) => <button key={key} aria-label={`取消${seriesBy[key]?.name ?? key}的素材減免`} title={`${seriesBy[key]?.name ?? key}（點擊取消）`} onClick={() => toggleDiscount(key)}
           className="group relative grid place-items-center min-w-8 h-8 p-0.5 border border-[#bfe1de] rounded-lg bg-white text-[11px] cursor-pointer hover:border-[#099aa5]">
@@ -1538,7 +1578,7 @@ export default function MhnowApp() {
         editingSlot={editing?.build === build.id ? editing.slot : null} open={(slot) => !!openTiers[`${build.id}:${slot}`]} canDelete={builds.builds.length > 1}
         onEdit={(slot) => editSlot(build, slot)} onToggle={(slot) => setOpenTiers((state) => ({ ...state, [`${build.id}:${slot}`]: !state[`${build.id}:${slot}`] }))}
         onDrift={(slot, position) => setDriftPick({ build: build.id, slot, index: position })} onSkill={(name, level) => setSkillTip({ name, level })}
-        onSkillGear={() => setSkillGearBuild(build.id)} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} onShare={() => openShare(build)} /></SortableBuild>)}
+        onSkillGear={() => { setSkillGearBuild(build.id); setSkillGearOpen(true); }} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} onShare={() => openShare(build)} /></SortableBuild>)}
 
       <button aria-label="新增配裝" disabled={full} title={full ? `最多 ${MAX_BUILDS} 組` : "新增一組空白配裝"} onClick={addNewBuild}
         className="min-h-[120px] border border-dashed border-[#b5bbb5] rounded-xl bg-transparent text-[#5b635c] text-[14px] cursor-pointer hover:bg-[#ece8dc] disabled:cursor-default disabled:hover:bg-transparent">
@@ -1548,12 +1588,15 @@ export default function MhnowApp() {
       <PlannedGearPanel series={allSeries} plans={plans} onChange={setPlans} ctx={cardContext} included={plansIncluded} ready={plansRestored} storageError={plansStorageError}
         onIncluded={(include) => setStats((state) => ({ ...state, excludedBuilds: include ? state.excludedBuilds.filter((id) => id !== PLANNED_STATS_ID) : [...new Set([...state.excludedBuilds, PLANNED_STATS_ID])] }))} />
 
-      {recommendOpen && index && driftstones ? <RecommendPicker series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
+      {recommendMounted && index && driftstones ? <RecommendPicker key={recommendReset} series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
         icons={icons} gearIcons={{ weapon: WEAPON_ICON, armor: ARMOR_ICON }}
         weaponPicker={(value, onPick) => <WeaponChooser series={weaponSeries} icons={icons} value={value} onPick={onPick} />}
-        onClose={() => setRecommendOpen(false)} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
-      {skillGearBuild ? builds.builds.filter((build) => build.id === skillGearBuild).map((build) => <SkillGearPicker key={build.id} series={allSeries} icons={icons} build={build}
-        onClose={() => setSkillGearBuild(null)} onPick={(slot, key) => changeBuild(build.id)((next) => {
+        visible={recommendOpen} clearOnClose={clearOnClose.recommend} onClearOnClose={(recommend) => setClearOnClose((state) => ({ ...state, recommend }))}
+        onClear={() => setRecommendReset((count) => count + 1)} onClose={closeRecommend} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
+      {/* 不用 build.id 當 key：換一組配裝打開時，搜尋條件也沿用，只是選的裝備套到新的那組。 */}
+      {skillGearBuild ? builds.builds.filter((build) => build.id === skillGearBuild).map((build) => <SkillGearPicker key={`skill-gear-${skillGearReset}`} series={allSeries} icons={icons} build={build}
+        visible={skillGearOpen} clearOnClose={clearOnClose.skillGear} onClearOnClose={(skillGear) => setClearOnClose((state) => ({ ...state, skillGear }))}
+        onClear={() => setSkillGearReset((count) => count + 1)} onClose={closeSkillGear} onPick={(slot, key) => changeBuild(build.id)((next) => {
           const gear = { ...next.gear };
           if (gear[slot] === key) delete gear[slot];
           else gear[slot] = key;

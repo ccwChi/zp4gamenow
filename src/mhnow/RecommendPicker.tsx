@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { assetPath } from "./assetPath";
 import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
+import { SKILL_CELL, SkillGroups } from "./SkillGroups";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS } from "./damage";
 import { pieceSkills, recommendBuilds, swapPiece, weaponSetup, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
 
@@ -85,7 +86,7 @@ function Detail({ item, picks, maxLevels, byKey, icons, gearIcons, grade, onSwap
           {alternatives.length ? <button aria-expanded={swapping === slot} className={SMALL_BUTTON} onClick={() => setSwapping(swapping === slot ? null : slot)}>換（{alternatives.length}）</button> : null}
         </div>
         {swapping === slot ? <div className="px-1.5 pb-1.5 space-y-1 max-h-[220px] overflow-auto">
-          <p className={NOTE}>以下替換後條件一樣成立，差別在其他技能：</p>
+          <p className={NOTE}>以下替換後強度一樣，差別在其他技能或多超過上限的等級：</p>
           {alternatives.map((alternative) => <button key={alternative} onClick={() => { onSwap(slot, alternative); setSwapping(null); }}
             className="w-full flex items-center gap-2 p-1.5 rounded-md border border-[#e3dac6] bg-white text-left cursor-pointer hover:border-[#099aa5]">
             <Icon src={icons[alternative]} size={26} fallback={byKey[alternative]?.name} />
@@ -103,12 +104,16 @@ function Detail({ item, picks, maxLevels, byKey, icons, gearIcons, grade, onSwap
   </div>;
 }
 
-export function RecommendPicker({ series, stones, skillLevels, weaponNames, icons, gearIcons, weaponPicker, full, onSave, onClose }: {
+export function RecommendPicker({ series, stones, skillLevels, weaponNames, icons, gearIcons, weaponPicker, full, onSave, onClose, visible, clearOnClose, onClearOnClose, onClear }: {
   series: RecommendSeries[]; stones: RecommendDrifts; skillLevels: Record<string, string[]>; weaponNames: Record<string, string>;
   icons: Record<string, string>; gearIcons: { weapon: Record<string, string>; armor: Record<string, string> };
   weaponPicker: (value: string, onPick: (weapon: string) => void) => ReactNode;
   full: boolean; onSave: (build: Build) => void; onClose: () => void;
+  /** 關閉時只藏起來（條件與結果都留著）；clearOnClose 勾選時由呼叫端卸載清掉。 */
+  visible: boolean; clearOnClose: boolean; onClearOnClose: (next: boolean) => void; onClear: () => void;
 }) {
+  // 建議配裝的條件設定比較花時間，點背景不關閉，免得誤觸。
+  const windowProps = { onClose, open: visible, clearOnClose, onClearOnClose, onClear, closeOnBackdrop: false };
   const [weapon, setWeapon] = useState("");
   const [choosingWeapon, setChoosingWeapon] = useState(true);
   // 一律以最高階（G10）的技能、洞數與武器數值計算。
@@ -181,7 +186,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
     setSaved(saved.filter((id) => id !== results[index].build.id));
   }
 
-  if (page === "results") return <FloatingPicker title="建議配裝 · 結果" onClose={onClose}>
+  if (page === "results") return <FloatingPicker title="建議配裝 · 結果" {...windowProps}>
     <div className="h-full flex flex-col gap-2 text-[13px]">
       <div className="shrink-0 flex items-center gap-2 p-2 rounded-lg bg-[#fffaf0] border border-[#e3dac6]">
         <Icon src={gearIcons.weapon[weaponType]} size={22} />
@@ -222,7 +227,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
     </div>
   </FloatingPicker>;
 
-  return <FloatingPicker title="建議配裝" onClose={onClose}>
+  return <FloatingPicker title="建議配裝" {...windowProps}>
     <div className="h-full flex flex-col gap-2 text-[13px]">
       <div className="flex-1 min-h-0 overflow-auto space-y-2">
         <section className={SECTION}>
@@ -256,10 +261,9 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
             })}
             <input aria-label="搜尋技能" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋技能，例如：攻擊 會心"
               className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-[#f8f8f5] text-[13px] outline-none" />
-            <div className="flex flex-wrap gap-1 max-h-[180px] overflow-auto">
-              {filtered.map((name) => { const on = picks.some((pick) => pick.name === name); return <button key={name} aria-pressed={on} onClick={() => toggleSkill(name)}
-                className={cx("px-2 py-1 rounded border text-[12px] cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; })}
-              {!filtered.length ? <p className={NOTE}>找不到符合的技能。</p> : null}
+            <div className="max-h-[260px] overflow-auto">
+              <SkillGroups names={filtered} searching={terms.length > 0} empty={<p className={NOTE}>找不到符合的技能。</p>} renderSkill={(name) => { const on = picks.some((pick) => pick.name === name); return <button key={name} aria-pressed={on} onClick={() => toggleSkill(name)}
+                className={cx(SKILL_CELL, "px-2 py-1 rounded border text-[12px] cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; }} />
             </div>
           </div>
         </section>
