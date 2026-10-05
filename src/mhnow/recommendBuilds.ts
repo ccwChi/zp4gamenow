@@ -14,7 +14,7 @@ export type RecommendSeries = {
 };
 export type RecommendDrifts = {
   colors: { key: string; skills: { name: string; rare?: boolean }[] }[];
-  common: string[]; events: { skills: string[] }[];
+  common: string[]; events: { skills: string[]; rare?: string[] }[];
 };
 /**
  * stoneCount：要鍊成的漂流石數；rareStones：其中稀有（或只出現在神秘漂流石）的數量。
@@ -124,7 +124,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     };
     for (const color of stones.colors) for (const skill of color.skills) offer(skill.name, color.key, skill.rare ?? false);
     for (const skill of stones.common) offer(skill, "common", false);
-    for (const event of stones.events) for (const skill of event.skills) offer(skill, "event", true);
+    for (const event of stones.events) for (const skill of event.skills) offer(skill, "event", event.rare?.includes(skill) ?? true);
   }
   for (const skill of driftOnly) {
     if (!includeDrifts) throw new Error("已指定技能全靠漂流鍊成，請開啟允許漂流石。");

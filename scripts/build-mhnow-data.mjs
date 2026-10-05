@@ -232,6 +232,10 @@ function seriesOfItemGroup(group) {
  */
 const partNames = zh["monster-parts"];
 const commonSkills = smelt.general.skills;
+// mhn.quest 資料還沒收錄的神秘漂流石普通（非稀有）技能，手動補上；來源更新後有了就會自動去重。
+const EVENT_NORMAL_SKILLS = {
+  "event-u": ["爆破屬性強化", "輕巧", "防禦性能", "風壓耐性", "攻擊", "防禦", "爆破異常耐性"],
+};
 const driftstones = {
   colors: Object.entries(smelt.color).map(([key, entry]) => {
     const rest = commonSkills.length + entry.skills.length - entry.rare.length;
@@ -247,10 +251,12 @@ const driftstones = {
     };
   }),
   common: commonSkills,
+  // rare：神秘漂流石裡的稀有技能；只有稀有技能的組（來源資料大多如此）rare 會跟 skills 一樣。
   events: Object.entries(smelt.event).map(([key, entry]) => ({
     key,
     label: zh["driftstone-color"]["event-format"].replace("{0}", key.replace("event-", "").toUpperCase()),
-    skills: entry.skills,
+    skills: [...entry.skills, ...(EVENT_NORMAL_SKILLS[key] ?? []).filter((skill) => !entry.skills.includes(skill))],
+    rare: entry.rare ?? entry.skills,
   })),
 };
 await writeFile(DRIFT_OUT, JSON.stringify(driftstones), "utf8");

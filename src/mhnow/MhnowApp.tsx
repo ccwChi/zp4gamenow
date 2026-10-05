@@ -48,8 +48,10 @@ type ArmorSlot = "helm" | "mail" | "gloves" | "belt" | "greaves";
 type Driftstones = {
   colors: { key: string; label: string; sources: { key: string; name: string; parts?: string[] }[]; skills: { name: string; rare: boolean; chance: number }[]; commonChance: number }[];
   common: string[];
-  events: { key: string; label: string; skills: string[] }[];
+  events: { key: string; label: string; skills: string[]; rare?: string[] }[];
 };
+/** 神秘漂流石同組有稀有也有普通技能時（例如【U】），標出稀有的；整組都稀有就不標。 */
+const mixedRare = (group: Driftstones["events"][number], name: string) => !!group.rare && group.rare.length < group.skills.length && group.rare.includes(name);
 
 const ARMOR_SLOTS: ArmorSlot[] = ["helm", "mail", "gloves", "belt", "greaves"];
 // 來源用的是簡稱（手、片手、鎚），這裡改用完整名稱比較好讀。
@@ -185,10 +187,12 @@ export function searchSeries(series: Series[], query: string, slot?: string): { 
 }
 
 /** slot：配裝時正在選的部位，給技能搜尋用；計算器不分部位就不傳，只搜名稱。value 給陣列就是複選（素材減免用）。 */
-function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot, placeholder }: {
+/** compact：圖片模式改成跟武器種類一樣大的小方塊（40px、自動換行），給建議配裝用。 */
+function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot, placeholder, compact }: {
   series: Series[]; value: string | string[]; onPick: (key: string) => void; icons: Record<string, string>;
-  display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string; placeholder?: string;
+  display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string; placeholder?: string; compact?: boolean;
 }) {
+  const small = compact && display === "image";
   const ranks = new Map(series.map((item, position) => [item.key, position]));
   const visible = searchSeries(series, query, slot).sort((a, b) => ranks.get(a.item.key)! - ranks.get(b.item.key)!);
   const modeButton = (mode: "image" | "name", label: string) => <button
@@ -201,15 +205,15 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
         className="flex-1 min-w-0 mx-3 my-0 py-2 px-[11px] border border-[#dfe2dc] rounded-[7px] bg-[#f8f8f5] text-[13px] outline-none max-[620px]:order-3 max-[620px]:basis-full max-[620px]:m-0" />
       <div className="flex bg-[#eef0ed] rounded-md p-0.5">{modeButton("image", "圖片")}{modeButton("name", "名稱")}</div>
     </div>
-    {visible.length ? <div className={cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
+    {visible.length ? <div className={small ? "flex flex-wrap gap-1 max-h-[220px] overflow-auto content-start" : cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
       display === "image" ? "grid-cols-[repeat(auto-fill,minmax(82px,1fr))] max-[760px]:grid-cols-[repeat(auto-fill,minmax(72px,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]")}>
       {visible.map(({ item, skill }) => { const active = Array.isArray(value) ? value.includes(item.key) : value === item.key; return <button key={item.key}
         title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} aria-pressed={Array.isArray(value) ? active : undefined} onClick={() => onPick(item.key)}
         className={cx("min-w-0 p-[5px] border rounded-[7px] flex flex-col items-center justify-center text-[#2e3731] cursor-pointer",
-          display === "name" ? "min-h-[42px]" : "min-h-[50px]",
+          small ? "w-10 h-10 p-0.5 overflow-hidden" : display === "name" ? "min-h-[42px]" : "min-h-[50px]",
           active ?"border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f1f2ef]")}>
-        {display === "image" && icons[item.key] ? <span className={cx("w-[52px] h-[52px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
-          : <span className="font-bold text-[12px] leading-[1.3] text-center break-keep">{item.name}</span>}
+        {display === "image" && icons[item.key] ? <span className={cx(small ? "w-8 h-8" : "w-[52px] h-[52px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
+          : <span className={cx("font-bold text-center break-keep", small ? "text-[10px] leading-[1.1]" : "text-[12px] leading-[1.3]")}>{item.name}</span>}
         {display === "name" ? <small className="block max-w-full truncate text-[8px] text-[#777]">{`G${item.unlock} 起`}</small> : null}
         {skill ? <small className="block max-w-full truncate text-[10px] font-bold text-[#e08a00]">{skill.name} {skill.level}</small> : null}
       </button>; })}
@@ -292,17 +296,17 @@ function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; ico
   const [query, setQuery] = useState("");
   const [display, setDisplay] = useState<"image" | "name">("image");
   return <>
-    <div role="group" aria-label="武器種類" className="flex gap-0.5 mb-2">
+    <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1 mb-2">
       {ALL_WEAPON_TYPES.map((option) => { const on = type === option; return <button key={option} aria-pressed={on} title={WEAPON_NAMES[option]} aria-label={WEAPON_NAMES[option]}
         onClick={() => {
           setType(option);
           if (currentKey && series.find((item) => item.key === currentKey)?.weaponTypes.includes(option)) onPick(`${currentKey}::${option}`);
         }}
-        className={cx("flex-1 min-w-0 h-8 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-        <span aria-hidden="true" className={cx("block w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
+        className={cx("w-10 h-10 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+        <span aria-hidden="true" className={cx("block w-7 h-7", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
       </button>; })}
     </div>
-    {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type))} value={currentType === type ? currentKey : ""} icons={icons}
+    {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type))} value={currentType === type ? currentKey : ""} icons={icons} compact
       display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => onPick(`${key}::${type}`)} />
       : <p className={cx(NOTE, "m-0")}>先點上面的武器種類。</p>}
   </>;
@@ -376,7 +380,7 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
       {color ? color.skills.map((skill) => skillButton(skill.name, skill.rare)) : null}
       {tab === "common" ? data.common.map((name) => skillButton(name)) : null}
       {tab === "event" ? data.events.map((group) => <div key={group.key} className="flex-[0_0_100%] flex flex-wrap gap-1.5 items-center">
-        <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] text-[11px]">{group.label}</small>{group.skills.map((name) => skillButton(name))}
+        <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] text-[11px]">{group.label}</small>{group.skills.map((name) => skillButton(name, mixedRare(group, name)))}
       </div>) : null}
     </div>
     {current ? <button className="mt-3 py-1.5 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] text-[13px] cursor-pointer" onClick={() => onPick(null)}>清除這個洞</button> : null}
@@ -422,7 +426,7 @@ function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; ic
     {tab === "common" ? <section className={panel}><h3 className={panelTitle}>共通技能（{data.common.length}）</h3>{chipList}<p className={NOTE}>每種顏色的漂流石都可能出現共通技能，機率看顏色，請到各顏色頁查看。</p></section> : null}
     {tab === "event" ? <section className={panel}><h3 className={panelTitle}>神秘漂流石（{data.events.length} 組）</h3>{data.events.map((group) => <p key={group.key} className="flex gap-2.5 m-0 py-1.5 border-b border-[#f1efe8] text-[13px] leading-[1.6]">
       <small className="flex-[0_0_52px] text-[#8b5fc7] font-bold text-[12px]">{group.label}</small>
-      <span className="flex flex-wrap gap-x-3 gap-y-0">{group.skills.map((name) => <span key={name}>{skillName(name)}</span>)}</span>
+      <span className="flex flex-wrap gap-x-3 gap-y-0">{group.skills.map((name) => <span key={name}>{skillName(name)}{mixedRare(group, name) ? <em className="not-italic text-[#e08a00] text-[12px]">★</em> : null}</span>)}</span>
     </p>)}<p className={NOTE}>來源資料沒有神秘漂流石的取得方式與機率。</p></section> : null}
   </div>;
 }

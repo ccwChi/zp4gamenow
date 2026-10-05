@@ -167,6 +167,13 @@ describe("recommended loadouts", () => {
     expect(recommendations[0].build.drifts.mail).toEqual([{ skill: "防禦", color: "common" }]);
   });
 
+  it("treats normal skills of mixed mystery stones as non-rare", async () => {
+    const mystery: RecommendDrifts = { colors: [], common: [], events: [{ skills: ["SP技能威力提升", "攻擊"], rare: ["SP技能威力提升"] }, { skills: ["看破"] }] };
+    const result = await recommendBuilds(fixture(), mystery, { ...options, includeDrifts: true, required: { "攻擊": 6, "看破": 1 } });
+    expect(result.recommendations[0].stoneCount).toBe(2);
+    expect(result.recommendations[0].rareStones).toBe(1);
+  });
+
   it("ranks bonus skills after the stone count", async () => {
     const series = fixture();
     series.push({ key: "sharp", name: "看破頭", hasArmor: true, weaponTypes: [], skills: { helm: [entry("攻擊", 1), entry("看破", 2)] } });
