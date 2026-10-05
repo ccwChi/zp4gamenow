@@ -151,6 +151,21 @@ for (const [key, config] of Object.entries(data.set)) {
   // 武器沒有洞；沒有這個欄位或是空陣列的部位不輸出，畫面上就不顯示。
   const slots = Object.fromEntries(Object.entries(data.eq[key]?.slot ?? {}).filter(([, grades]) => Array.isArray(grades) && grades.length));
 
+  // 武器數值（建議配裝算傷害用）：每種武器的屬性 eff[種類] ?? eff.all，該屬性的 base／ele／crit 指到 weaponVal 的曲線。
+  // 曲線依 1-1、1-2…10-5 排列；只取每階的 -5，index 才不會太大。weaponEff 只列跟 eff.all 不同的種類。
+  const elementOf = (type) => config.eff?.[type] ?? config.eff?.all ?? "white";
+  const atGradeEnd = (curve) => curve ? Array.from({ length: MAX_GRADE }, (_, grade) => curve[grade * LEVELS.length + LEVELS.length - 1]) : undefined;
+  const weaponStats = {};
+  for (const element of new Set(weaponTypes.map(elementOf))) {
+    const block = config[element];
+    const atk = atGradeEnd(data.weaponVal[block?.base]);
+    if (!atk) continue;
+    const ele = atGradeEnd(data.weaponVal[block.ele]);
+    const crit = atGradeEnd(data.weaponVal[block.crit]);
+    weaponStats[element] = { atk, ...(ele ? { ele } : {}), ...(crit ? { crit } : {}) };
+  }
+  const weaponEff = Object.fromEntries(weaponTypes.filter((type) => elementOf(type) !== (config.eff?.all ?? "white")).map((type) => [type, elementOf(type)]));
+
   index.push({
     key,
     id: config.id,
@@ -163,6 +178,8 @@ for (const [key, config] of Object.entries(data.set)) {
     ...(Object.keys(weaponSkills).length ? { weaponSkills } : {}),
     traits: weaponTraits(config, weaponTypes),
     ...(Object.keys(slots).length ? { slots } : {}),
+    ...(Object.keys(weaponStats).length ? { weaponElement: config.eff?.all ?? "white", weaponStats } : {}),
+    ...(Object.keys(weaponEff).length ? { weaponEff } : {}),
   });
 
   const detail = { key, name: zh["monster-name"][key] ?? key };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { recommendBuilds, RECOMMEND_SLOTS, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
+import { recommendBuilds, swapPiece, RECOMMEND_SLOTS, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
 
 const entry = (skill: string, level: number, grade = 1) => ({ skill, levels: [{ level, grade }] });
 const stones: RecommendDrifts = { colors: [{ key: "white", skills: [{ name: "攻擊" }] }], common: [], events: [] };
@@ -61,8 +61,7 @@ describe("recommended loadouts", () => {
   it("returns full armor sets, weapon-specific skills and keeps input unchanged", async () => {
     const series = fixture();
     const before = JSON.stringify(series);
-    const { recommendations, truncated } = await recommendBuilds(series, stones, options);
-    expect(truncated).toBe(false);
+    const { recommendations } = await recommendBuilds(series, stones, options);
     expect(recommendations).toHaveLength(1);
     expect(recommendations[0].skills).toEqual({ "集中": 1, "攻擊": 5 });
     expect(recommendations[0].build.gear).toEqual({ weapon: "weapon::bow", ...Object.fromEntries(RECOMMEND_SLOTS.map((slot) => [slot, slot])) });
@@ -105,15 +104,13 @@ describe("recommended loadouts", () => {
 
   it("returns distinct alternatives in ascending stone count", async () => {
     const series = fixture();
-    series.push({ key: "alt", name: "替代頭", hasArmor: true, weaponTypes: [], skills: { helm: [] }, slots: { helm: [5] } });
+    series.push({ key: "alt", name: "替代頭", hasArmor: true, weaponTypes: [], skills: { helm: [] }, slots: { helm: [5, 5] } });
     const result = await recommendBuilds(series, stones, { ...options, includeDrifts: true });
     expect(result.recommendations.map((item) => item.stoneCount)).toEqual([0, 1]);
     expect(new Set(result.recommendations.map((item) => JSON.stringify(item.build.gear))).size).toBe(2);
   });
 
-  it("distinguishes a bounded search from proven infeasibility and supports cancellation", async () => {
-    const result = await recommendBuilds(fixture(), stones, { ...options, nodeLimit: 1 });
-    expect(result.truncated).toBe(true);
+  it("supports cancellation and rejects invalid weapons", async () => {
     const controller = new AbortController();
     controller.abort();
     await expect(recommendBuilds(fixture(), stones, { ...options, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
@@ -134,5 +131,48 @@ describe("recommended loadouts", () => {
         expect(item.build.drifts[slot].length).toBeLessThanOrEqual(armor.slots?.[slot]?.length ?? 0);
       }
     }
+  });
+
+  it("drops strictly worse pieces and avoids levels beyond the skill cap", async () => {
+    const series = fixture().map((item) => item.hasArmor ? { ...item, skills: { [item.key]: [entry("攻擊", 2)] } } : item);
+    for (const slot of RECOMMEND_SLOTS) series.push({ key: `plain-${slot}`, name: "無技能", hasArmor: true, weaponTypes: [], skills: { [slot]: [] } });
+    const { recommendations } = await recommendBuilds(series, stones, { ...options, maxLevels: { "攻擊": 5 } });
+    expect(recommendations).toHaveLength(1);
+    // 每件 2 級，要 5 級至少三件：6 級只浪費 1 級，其餘兩件換成無技能的防具。
+    expect(recommendations[0].skills["攻擊"]).toBe(6);
+    expect(recommendations[0].overflow).toBe(1);
+    expect(Object.values(recommendations[0].build.gear).filter((key) => key.startsWith("plain-"))).toHaveLength(2);
+  });
+
+  it("merges interchangeable pieces into one recommendation", async () => {
+    const series = fixture();
+    series.push({ key: "twin", name: "同款頭", hasArmor: true, weaponTypes: [], skills: { helm: [entry("攻擊", 1), entry("麻痺耐性", 1)] }, slots: { helm: [5] } });
+    const { recommendations } = await recommendBuilds(series, stones, options);
+    expect(recommendations).toHaveLength(1);
+    expect(recommendations[0].build.gear.helm).toBe("helm");
+    expect(recommendations[0].alternatives).toEqual({ helm: ["twin"] });
+    const swapped = swapPiece(recommendations[0], "helm", "twin", series, options);
+    expect(swapped.build.gear.helm).toBe("twin");
+    expect(swapped.alternatives).toEqual({ helm: ["helm"] });
+    expect(swapped.skills).toEqual({ ...recommendations[0].skills, "麻痺耐性": 1 });
+    expect(swapPiece(swapped, "helm", "helm", series, options).skills).toEqual(recommendations[0].skills);
+  });
+
+  it("prefers common drift stones over rare ones at the same stone count", async () => {
+    const series = fixture();
+    series.push({ key: "guard", name: "防禦頭", hasArmor: true, weaponTypes: [], skills: { helm: [entry("防禦", 1)] }, slots: { helm: [5] } });
+    const mixed: RecommendDrifts = { colors: [{ key: "white", skills: [{ name: "攻擊", rare: true }] }], common: ["防禦"], events: [] };
+    const { recommendations } = await recommendBuilds(series, mixed, { ...options, includeDrifts: true, required: { "攻擊": 6, "防禦": 1 } });
+    expect(recommendations.map((item) => [item.build.gear.helm, item.stoneCount, item.rareStones])).toEqual([["helm", 2, 1], ["guard", 2, 2]]);
+    expect(recommendations[0].build.drifts.mail).toEqual([{ skill: "防禦", color: "common" }]);
+  });
+
+  it("ranks bonus skills after the stone count", async () => {
+    const series = fixture();
+    series.push({ key: "sharp", name: "看破頭", hasArmor: true, weaponTypes: [], skills: { helm: [entry("攻擊", 1), entry("看破", 2)] } });
+    const { recommendations } = await recommendBuilds(series, stones, { ...options, bonus: ["看破"] });
+    expect(recommendations.map((item) => [item.build.gear.helm, item.bonus])).toEqual([["sharp", 2]]);
+    const plain = await recommendBuilds(series, stones, { ...options, includeDrifts: true, bonus: ["看破"] });
+    expect(plain.recommendations.map((item) => item.build.gear.helm)).toEqual(["sharp", "helm"]);
   });
 });

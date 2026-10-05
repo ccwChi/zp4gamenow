@@ -4,6 +4,7 @@ import { assetPath } from "./assetPath";
 import { FloatingPicker } from "./FloatingPicker";
 import { RecommendPicker } from "./RecommendPicker";
 import { moveBuild } from "./buildStore";
+import { skillsAtGrade, type SeriesSkill } from "./skills";
 import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
 import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, type PlannedGear } from "./plannedGear";
 import { DEFAULT_MATERIAL_DISCOUNT, MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, serializeMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
@@ -14,8 +15,6 @@ import { SHARE_PARAM, decodeBuildShare, encodeBuildShare, shareUrl } from "./bui
 import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, pieceOf, removeBuild, saveBuilds, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
 
 /** 資料由 scripts/build-mhnow-data.mjs 產生，原生繁體中文，不需要任何翻譯層。 */
-type SkillLevel = { level: number; grade: number };
-type SeriesSkill = { skill: string; levels: SkillLevel[]; style?: number };
 /** 武器種類專屬特性，轉檔時已翻成中文；後座力、裝填是文字（小／中／大…、快／普通…）。 */
 type WeaponTraits = {
   ammo?: { name: string; num: number; recoil: string; reload: string }[];
@@ -29,6 +28,8 @@ type WeaponTraits = {
 };
 /** weaponSkills：技能跟通用武器不同的武器種類（如碎龍的輕／重弩），有的話整份取代 skills.weapon。 */
 type Series = { key: string; name: string; id?: number; weaponElements?: string[]; unlock: number; weaponTypes: string[]; hasArmor: boolean; skills: Record<string, SeriesSkill[]>; weaponSkills?: Record<string, SeriesSkill[]>; traits: Record<string, WeaponTraits>; slots?: Partial<Record<ArmorSlot, number[]>> };
+
+export { skillsAtGrade };
 
 /** 某系列某部位的技能；武器要看種類，有專屬技能就用專屬的。 */
 export function seriesSkills(series: Series, slot: string, weaponType?: string): SeriesSkill[] {
@@ -119,16 +120,6 @@ function DriftHex({ color, size }: { color: string; size: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="inline-block flex-none align-[-1px]">
     <path d="M12 1.5 21.5 7v10L12 22.5 2.5 17V7z" fill={DRIFT_DOT[color] ?? DRIFT_DOT.common} stroke="rgba(0,0,0,.28)" strokeWidth="1.5" strokeLinejoin="round" />
   </svg>;
-}
-
-/** 某個部位在指定階級時已取得的技能等級。 */
-export function skillsAtGrade(entries: SeriesSkill[] = [], grade: number): Record<string, number> {
-  const result: Record<string, number> = {};
-  for (const entry of entries) {
-    const reached = entry.levels.filter((level) => level.grade <= grade);
-    if (reached.length) result[entry.skill] = Math.max(...reached.map((level) => level.level));
-  }
-  return result;
 }
 
 function addSkills(target: Record<string, number>, source: Record<string, number>) {
@@ -292,6 +283,29 @@ function ChoiceGrid({ label, items, value, onPick, iconOnly }: {
       })}
     </div>
   </div>;
+}
+
+/** 建議配裝用的武器選擇：先點武器種類圖示，再點有這種武器的魔物圖示。換種類時，原本的魔物也有這種武器就直接沿用。 */
+function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; icons: Record<string, string>; value: string; onPick: (weapon: string) => void }) {
+  const [currentKey, currentType] = value.split("::");
+  const [type, setType] = useState(currentType ?? "");
+  const [query, setQuery] = useState("");
+  const [display, setDisplay] = useState<"image" | "name">("image");
+  return <>
+    <div role="group" aria-label="武器種類" className="flex gap-0.5 mb-2">
+      {ALL_WEAPON_TYPES.map((option) => { const on = type === option; return <button key={option} aria-pressed={on} title={WEAPON_NAMES[option]} aria-label={WEAPON_NAMES[option]}
+        onClick={() => {
+          setType(option);
+          if (currentKey && series.find((item) => item.key === currentKey)?.weaponTypes.includes(option)) onPick(`${currentKey}::${option}`);
+        }}
+        className={cx("flex-1 min-w-0 h-8 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+        <span aria-hidden="true" className={cx("block w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
+      </button>; })}
+    </div>
+    {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type))} value={currentType === type ? currentKey : ""} icons={icons}
+      display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => onPick(`${key}::${type}`)} />
+      : <p className={cx(NOTE, "m-0")}>先點上面的武器種類。</p>}
+  </>;
 }
 
 /**
@@ -1531,6 +1545,8 @@ export default function MhnowApp() {
         onIncluded={(include) => setStats((state) => ({ ...state, excludedBuilds: include ? state.excludedBuilds.filter((id) => id !== PLANNED_STATS_ID) : [...new Set([...state.excludedBuilds, PLANNED_STATS_ID])] }))} />
 
       {recommendOpen && index && driftstones ? <RecommendPicker series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
+        icons={icons} gearIcons={{ weapon: WEAPON_ICON, armor: ARMOR_ICON }}
+        weaponPicker={(value, onPick) => <WeaponChooser series={weaponSeries} icons={icons} value={value} onPick={onPick} />}
         onClose={() => setRecommendOpen(false)} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
       {skillGearBuild ? builds.builds.filter((build) => build.id === skillGearBuild).map((build) => <SkillGearPicker key={build.id} series={allSeries} icons={icons} build={build}
         onClose={() => setSkillGearBuild(null)} onPick={(slot, key) => changeBuild(build.id)((next) => {
