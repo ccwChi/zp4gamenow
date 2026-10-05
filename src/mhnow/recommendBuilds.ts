@@ -16,6 +16,7 @@ export type Recommendation = { build: Build; skills: Record<string, number>; sto
 export type RecommendationResult = { recommendations: Recommendation[]; truncated: boolean; visited: number };
 export type RecommendOptions = {
   weapon: string; required: Record<string, number>; grade: number; includeDrifts: boolean;
+  driftOnly?: string[];
   limit?: number; nodeLimit?: number; signal?: AbortSignal;
 };
 
@@ -41,6 +42,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
   if (!Number.isInteger(grade) || grade < 1 || grade > 10) throw new Error("裝備階級必須介於 1 至 10。");
   if ((selected.unlock ?? 1) > grade) throw new Error("所選階級低於武器的生產階級。");
   const targets = Object.entries(options.required);
+  const driftOnly = new Set((options.driftOnly ?? []).filter((skill) => options.required[skill] !== undefined));
   if (!targets.length || targets.some(([, level]) => !Number.isInteger(level) || level < 1)) throw new Error("請至少設定一個技能與有效等級。");
   const limit = Math.max(1, Math.min(10, options.limit ?? 10));
   const nodeLimit = Math.max(1, options.nodeLimit ?? 200000);
@@ -50,11 +52,15 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     for (const skill of stones.common) if (!driftPool.has(skill)) driftPool.set(skill, { skill, color: "common" });
     for (const event of stones.events) for (const skill of event.skills) if (!driftPool.has(skill)) driftPool.set(skill, { skill, color: "event" });
   }
+  for (const skill of driftOnly) {
+    if (!includeDrifts) throw new Error("已指定技能全靠漂流鍊成，請開啟允許漂流石。");
+    if (!driftPool.has(skill)) throw new Error(`目前漂流石資料沒有「${skill}」，無法指定全靠漂流鍊成。`);
+  }
   const base = skillsAt(selected.weaponSkills?.[weaponType] ?? selected.skills.weapon ?? [], grade);
   const pools = RECOMMEND_SLOTS.map((slot) => ({ slot, items: series.filter((item) => item.hasArmor && (item.unlock ?? 1) <= grade && (item.skills[slot] !== undefined || item.slots?.[slot] !== undefined)).map((item) => {
     const skills = skillsAt(item.skills[slot] ?? [], grade);
     const slots = includeDrifts ? (item.slots?.[slot] ?? []).filter((unlock) => unlock <= grade).length : 0;
-    const relevance = targets.reduce((sum, [skill, level]) => sum + Math.min(level, skills[skill] ?? 0), 0);
+    const relevance = targets.reduce((sum, [skill, level]) => sum + (driftOnly.has(skill) ? 0 : Math.min(level, skills[skill] ?? 0)), 0);
     return { key: item.key, skills, slots, relevance };
   }).sort((a, b) => b.relevance - a.relevance || b.slots - a.slots || a.key.localeCompare(b.key)) }));
   // Most constrained parts first improves pruning without discarding any candidates.
@@ -82,7 +88,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     let needed = 0;
     for (let index = 0; index < targets.length; index++) {
       const [skill, level] = targets[index];
-      const deficit = Math.max(0, level - (skills[skill] ?? 0) - remaining[depth][index]);
+      const deficit = driftOnly.has(skill) ? level : Math.max(0, level - (skills[skill] ?? 0) - remaining[depth][index]);
       if (deficit && !driftPool.has(skill)) return;
       needed += deficit;
     }
@@ -91,7 +97,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
       const signature = RECOMMEND_SLOTS.map((slot) => gear[slot]).join("|");
       if (seen.has(signature)) return;
       seen.add(signature);
-      const picks = targets.flatMap(([skill, level]) => Array.from({ length: Math.max(0, level - (skills[skill] ?? 0)) }, () => driftPool.get(skill)!));
+      const picks = targets.flatMap(([skill, level]) => Array.from({ length: driftOnly.has(skill) ? level : Math.max(0, level - (skills[skill] ?? 0)) }, () => driftPool.get(skill)!));
       const drifts: Build["drifts"] = {};
       let position = 0;
       for (const slot of RECOMMEND_SLOTS) {

@@ -20,6 +20,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, full
   const [required, setRequired] = useState<Record<string, number>>({});
   const [skill, setSkill] = useState("");
   const [includeDrifts, setIncludeDrifts] = useState(false);
+  const [driftOnly, setDriftOnly] = useState<string[]>([]);
   const [spLevel, setSpLevel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RecommendationResult | null>(null);
@@ -39,6 +40,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, full
   }, [series, skillLevels]);
   const skillNames = Object.keys(maxLevels).filter((name) => name !== SP_SKILL).sort((a, b) => a.localeCompare(b, "zh-Hant"));
   const targets = spLevel ? { ...required, [SP_SKILL]: spLevel } : required;
+  const driftSkills = new Set([...stones.colors.flatMap((color) => color.skills.map((item) => item.name)), ...stones.common, ...stones.events.flatMap((event) => event.skills)]);
   function invalidate() { setResult(null); setError(""); setSaved([]); }
   async function search() {
     invalidate();
@@ -46,7 +48,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, full
     controller.current = active;
     setBusy(true);
     try {
-      const next = await recommendBuilds(series, stones, { weapon: `${weaponSeries}::${weaponType}`, required: targets, grade, includeDrifts, signal: active.signal });
+      const next = await recommendBuilds(series, stones, { weapon: `${weaponSeries}::${weaponType}`, required: targets, grade, includeDrifts, driftOnly, signal: active.signal });
       if (!active.signal.aborted) setResult(next);
     } catch (cause) {
       if (!active.signal.aborted) setError(cause instanceof Error ? cause.message : "搜尋失敗，請重試。");
@@ -75,14 +77,21 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, full
             <datalist id={listId}>{skillNames.map((name) => <option key={name} value={name} />)}</datalist>
             <button className={BUTTON} disabled={!skillNames.includes(skill) || required[skill] !== undefined} onClick={() => { setRequired({ ...required, [skill]: 1 }); setSkill(""); invalidate(); }}>加入</button>
           </div>
-          {Object.entries(required).map(([name, level]) => <div key={name} className="flex items-center gap-2">
+          {Object.entries(required).map(([name, level]) => <div key={name} className="flex flex-wrap items-center gap-2">
             <label className="flex flex-1 items-center justify-between gap-2">{name}<select className={INPUT} value={level} onChange={(event) => setRequired({ ...required, [name]: Number(event.target.value) })}>
               {Array.from({ length: maxLevels[name] }, (_, index) => index + 1).map((value) => <option key={value} value={value}>至少 Lv{value}</option>)}
             </select></label>
-            <button className={BUTTON} aria-label={`移除${name}`} onClick={() => { setRequired(Object.fromEntries(Object.entries(required).filter(([key]) => key !== name))); invalidate(); }}>移除</button>
+            <button className={BUTTON} aria-label={`移除${name}`} onClick={() => { setRequired(Object.fromEntries(Object.entries(required).filter(([key]) => key !== name))); setDriftOnly(driftOnly.filter((key) => key !== name)); invalidate(); }}>移除</button>
+            <label className="basis-full flex items-center gap-2 text-[12px]">
+              <input type="checkbox" aria-label={`${name}全靠漂流鍊成`} disabled={!driftSkills.has(name)} checked={driftOnly.includes(name)} onChange={(event) => {
+                setDriftOnly(event.target.checked ? [...driftOnly, name] : driftOnly.filter((key) => key !== name));
+                if (event.target.checked) setIncludeDrifts(true);
+              }} />全靠漂流鍊成{!driftSkills.has(name) ? "（目前漂流石資料未收錄此技能）" : ""}
+            </label>
           </div>)}
         </div>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={includeDrifts} onChange={(event) => setIncludeDrifts(event.target.checked)} />允許漂流石（含神秘漂流石）</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={includeDrifts} disabled={driftOnly.length > 0} onChange={(event) => setIncludeDrifts(event.target.checked)} />允許漂流石（含神秘漂流石）</label>
+        {driftOnly.length ? <p className="text-[12px] text-[#687168] m-0">指定技能的要求等級全部由漂流鍊成提供，原生技能不抵扣；例如集中 Lv5 需要 5 個洞位。取消各技能的「全靠漂流鍊成」後即可關閉漂流石。</p> : null}
         {includeDrifts ? <p className="text-[12px] text-[#687168] m-0">依技能池與已解鎖洞位補足技能，每洞計 1 級；不代表目前已持有或一定能鍊成。</p> : null}
         <div className="flex items-center gap-2"><label className="flex items-center gap-2"><input type="checkbox" checked={spLevel > 0} onChange={(event) => setSpLevel(event.target.checked ? 1 : 0)} />必備：{SP_SKILL}</label>
           {spLevel > 0 ? <select aria-label="絕對迴避 SP 最低等級" className={INPUT} value={spLevel} onChange={(event) => setSpLevel(Number(event.target.value))}>{[1, 2, 3].map((value) => <option key={value} value={value}>至少 Lv{value}</option>)}</select> : null}
@@ -101,7 +110,11 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, full
           {RECOMMEND_SLOTS.map((slot) => <div key={slot}><b>{SLOT_NAMES[slot]}</b>：{names[item.build.gear[slot]]}
             {item.build.drifts[slot]?.length ? <span className="block text-[12px] text-[#687168]">漂流石：{item.build.drifts[slot].map((pick) => pick?.skill).join("、")}</span> : null}
           </div>)}
-          <p className="m-0 text-[#087b84]">{Object.entries(targets).map(([name, level]) => `${name} Lv${Math.min(item.skills[name] ?? 0, maxLevels[name] ?? Infinity)}／要求 ${level}`).join(" · ")}</p>
+          <div className="text-[#087b84]">{Object.entries(targets).map(([name, level]) => {
+            const driftLevel = Object.values(item.build.drifts).flat().filter((pick) => pick?.skill === name).length;
+            const nativeLevel = (item.skills[name] ?? 0) - driftLevel;
+            return <p key={name} className="m-0">{name} Lv{Math.min(item.skills[name] ?? 0, maxLevels[name] ?? Infinity)}／要求 {level}{driftOnly.includes(name) ? "（全靠漂流鍊成）" : ""}<span className="block text-[12px] text-[#687168]">原生 {nativeLevel} 級 ＋ 鍊成 {driftLevel} 級{nativeLevel + driftLevel > (maxLevels[name] ?? Infinity) ? "（總等級超過技能上限）" : ""}</span></p>;
+          })}</div>
           <details><summary className="cursor-pointer">全部技能</summary><p>{Object.entries(item.skills).map(([name, level]) => `${name} Lv${Math.min(level, maxLevels[name] ?? level)}`).join(" · ")}</p></details>
           <button className={BUTTON} disabled={full || saved.includes(item.build.id)} onClick={() => { onSave(item.build); setSaved([...saved, item.build.id]); }}>{saved.includes(item.build.id) ? "已加入配裝" : full ? "配裝數量已達上限" : "另存為新配裝"}</button>
         </article>)}

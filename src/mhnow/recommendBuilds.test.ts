@@ -13,6 +13,51 @@ function fixture(): RecommendSeries[] {
 const options = { weapon: "weapon::bow", grade: 10, required: { "攻擊": 5 }, includeDrifts: false };
 
 describe("recommended loadouts", () => {
+  it("supplies all requested drift-only levels even when native armor already meets the target", async () => {
+    const result = await recommendBuilds(fixture(), stones, { ...options, includeDrifts: true, driftOnly: ["攻擊"] });
+    expect(result.recommendations).toHaveLength(1);
+    const item = result.recommendations[0];
+    expect(item.stoneCount).toBe(5);
+    expect(item.skills["攻擊"]).toBe(10);
+    expect(Object.values(item.build.drifts).flat().map((pick) => pick?.skill)).toEqual(Array(5).fill("攻擊"));
+    expect(item.skills["集中"]).toBe(1);
+  });
+
+  it("shares capacity between drift-only skills and ordinary skill deficits", async () => {
+    const result = await recommendBuilds(fixture(), { ...stones, common: ["集中"] }, {
+      ...options, includeDrifts: true, driftOnly: ["攻擊"], required: { "攻擊": 5, "集中": 2 },
+    });
+    expect(result.recommendations).toEqual([]);
+    const mixed = await recommendBuilds(fixture(), { ...stones, common: ["集中"] }, {
+      ...options, includeDrifts: true, driftOnly: ["攻擊"], required: { "攻擊": 4, "集中": 2 },
+    });
+    expect(mixed.recommendations[0].stoneCount).toBe(5);
+    expect(mixed.recommendations[0].skills).toEqual({ "攻擊": 9, "集中": 2 });
+  });
+
+  it("rejects unavailable drift-only skills and disabled stones, and respects locked slots", async () => {
+    await expect(recommendBuilds(fixture(), stones, { ...options, driftOnly: ["攻擊"] })).rejects.toThrow("開啟允許漂流石");
+    await expect(recommendBuilds(fixture(), stones, { ...options, includeDrifts: true, required: { "集中": 1 }, driftOnly: ["集中"] })).rejects.toThrow("沒有「集中」");
+    const locked = await recommendBuilds(fixture(), stones, { ...options, includeDrifts: true, driftOnly: ["攻擊"], grade: 4 });
+    expect(locked.recommendations).toEqual([]);
+    const removed = await recommendBuilds(fixture(), stones, { ...options, driftOnly: ["已移除技能"] });
+    expect(removed.recommendations[0].stoneCount).toBe(0);
+  });
+
+  it("finds Focus 5 entirely from drifts alongside SP evasion using current data", async () => {
+    const data: { series: RecommendSeries[] } = JSON.parse(readFileSync("public/mhnow/series-index.json", "utf8"));
+    const driftData: RecommendDrifts = JSON.parse(readFileSync("public/mhnow/driftstones.json", "utf8"));
+    const weapon = data.series.find((item) => item.weaponTypes.includes("bow"))!;
+    const result = await recommendBuilds(data.series, driftData, {
+      weapon: `${weapon.key}::bow`, grade: 10, required: { "集中": 5, "絕對迴避【SP】": 1 }, includeDrifts: true, driftOnly: ["集中"],
+    });
+    expect(result.recommendations.length).toBeGreaterThan(0);
+    for (const item of result.recommendations) {
+      expect(Object.values(item.build.drifts).flat().filter((pick) => pick?.skill === "集中")).toHaveLength(5);
+      expect(item.skills["絕對迴避【SP】"]).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   it("returns full armor sets, weapon-specific skills and keeps input unchanged", async () => {
     const series = fixture();
     const before = JSON.stringify(series);
