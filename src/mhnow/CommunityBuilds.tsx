@@ -29,7 +29,7 @@ export function communityToBuild(entry: Entry): Build {
  * 社群配裝：mhnow.me 玩家分享的配裝，依「讚減倒讚」排序（CC BY 4.0），可依武器種類與魔物（圖示）篩選，一鍵加進自己的配裝，
  * 或到原站用模擬器打開。資料由 scripts/build-community-builds.mjs 產生。
  */
-export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, slotName, onAdd, onSkill, skillsOf, full, monsterPicker, modal }: {
+export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, slotName, onAdd, onSkill, skillsOf, full, modal }: {
   series: { key: string; name: string }[]; icons: Record<string, string>;
   /** 武器種類 → 圖示（跟配裝頁同一套）。 */
   weaponIcons: Record<string, string>;
@@ -37,19 +37,17 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   onAdd: (build: Build) => void; onSkill: (name: string, level: number) => void; full: boolean;
   /** 整套的技能等級（固有技能＋漂流石），由主程式用跟配裝頁同一套算法算。 */
   skillsOf: (build: Build) => Record<string, number>;
-  /** 魔物圖示選單（跟配裝頁同一個元件）：keys 是可以選的系列，value 是目前選的（"" 為不篩選）。 */
-  monsterPicker: (keys: string[], value: string, onPick: (key: string) => void) => ReactNode;
-  /** 主程式的彈出視窗（跟配裝頁選裝備同一個）。 */
+  /** 主程式的彈出視窗（魔物很多，平常收成一顆按鈕，點了才在視窗裡選）。 */
   modal: (title: string, onClose: () => void, content: ReactNode) => ReactNode;
 }) {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
-  // 篩選：武器種類（小圖示直接列出）、魔物（點按鈕彈出視窗選；只看武器是哪隻魔物的，防具不算）都是單選，再點一次取消；
+  // 篩選：武器種類、魔物（只看武器是哪隻魔物的，防具不算）都用小圖示直接列出，單選，再點一次取消；
   // 技能 tag 從「這個武器＋這隻魔物」的配裝裡整理出來，可複選，有任一個選中的技能就列出（OR）。
   const [type, setType] = useState("");
   const [monster, setMonster] = useState("");
-  const [chosenSkills, setChosenSkills] = useState<string[]>([]);
   const [choosingMonster, setChoosingMonster] = useState(false);
+  const [chosenSkills, setChosenSkills] = useState<string[]>([]);
   const [added, setAdded] = useState<number[]>([]);
   const [limit, setLimit] = useState(PAGE_SIZE);
   useEffect(() => {
@@ -79,12 +77,14 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   const percent = (name: string) => `${Math.round(skillShare[name] * 100)}%`;
   const activeSkills = chosenSkills.filter((name) => skillNames.includes(name));
   const matches = activeSkills.length ? ofMonster.filter((entry) => activeSkills.some((name) => skillsOfEntry(entry)[name])) : ofMonster;
-  // 魔物選單只列出「目前武器種類裡有這隻魔物的武器配裝」的，選了才不會變成空的。
-  const monsterKeys = [...new Set(ofType.map(weaponMonster))];
+  // 魔物圖示：所有有武器配裝的魔物，依全站的魔物順序排。
+  const withWeapons = new Set(builds.map(weaponMonster));
+  const monsterKeys = series.map((item) => item.key).filter((key) => withWeapons.has(key));
   const types = Object.keys(weaponIcons).filter((option) => builds.some((entry) => entry.type === option));
   const shown = matches.slice(0, limit);
-  // 先選武器或先選魔物都可以：選了魔物後，這隻魔物沒有配裝資料的武器種類會停用，所以不會選成 0 套。
+  // 先選武器或先選魔物都可以：選了一邊，另一邊沒有對應配裝資料的選項會停用，所以不會選成 0 套。
   const typeAvailable = (option: string) => !monster || builds.some((entry) => entry.type === option && weaponMonster(entry) === monster);
+  const monsterAvailable = (key: string) => !type || builds.some((entry) => entry.type === type && weaponMonster(entry) === key);
   const pickType = (option: string) => { setType(type === option ? "" : option); setLimit(PAGE_SIZE); };
   const pickMonster = (key: string) => { setMonster(monster === key ? "" : key); setLimit(PAGE_SIZE); setChoosingMonster(false); };
   const toggleSkill = (name: string) => { setChosenSkills(activeSkills.includes(name) ? activeSkills.filter((item) => item !== name) : [...activeSkills, name]); setLimit(PAGE_SIZE); };
@@ -114,6 +114,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
             onClick={() => pickType(option)} className={cx(iconButton(type === option), "disabled:opacity-25 disabled:cursor-not-allowed")}>{icon(weaponIcons[option], "w-6 h-6")}</button>; })}
         </div>
       </div>
+      {/* 魔物很多，平常只放一顆按鈕；點了在視窗裡選（沒有對應武器資料的魔物一樣停用）。 */}
       <div className="flex items-center gap-2"><span className={cx(label, "pt-0")}>魔物</span>
         <span className={cx("inline-flex items-center rounded-lg border text-[13px]", monster ? "border-[#099aa5] bg-[#eef8f7]" : "border-[#d8d0bd] bg-white")}>
           <button onClick={() => setChoosingMonster(true)} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-2 border-0 bg-transparent text-[#2b332c] cursor-pointer">
@@ -136,11 +137,18 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
         </div>
       </div> : null}
     </section>
+    {choosingMonster ? modal("選擇魔物", () => setChoosingMonster(false),
+      <div role="group" aria-label="魔物" className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
+        <button aria-pressed={!monster} onClick={() => pickMonster("")}
+          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border text-[11px] cursor-pointer", !monster ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5]")}>
+          <span className="w-9 h-9 flex items-center justify-center text-[15px] font-bold">全</span>全部</button>
+        {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = nameOf[key] ?? key; return <button key={key} aria-pressed={monster === key}
+          disabled={!available} title={available ? name : `${name}（沒有${weaponTypeName(type)}的配裝）`} onClick={() => pickMonster(key)}
+          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border text-[11px] leading-tight text-center cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed",
+            monster === key ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5] enabled:hover:border-[#c5cdc6]")}>
+          {icon(icons[key], "w-9 h-9")}<span className="max-w-full truncate">{name}</span></button>; })}
+      </div>) : null}
     {/* <p className="m-0 text-[13px] font-bold text-[#39423a]">{matches.length} 套配裝</p> */}
-    {choosingMonster ? modal("選擇魔物", () => setChoosingMonster(false), <>
-      {monster ? <button onClick={() => pickMonster(monster)} className="mb-2 py-1 px-2.5 border border-[#cfc7b4] rounded-md bg-white text-[12px] text-[#39423a] cursor-pointer">不篩選魔物</button> : null}
-      {monsterPicker(monsterKeys, monster, pickMonster)}
-    </>) : null}
     {!shown.length ? <p className="text-[13px] text-[#858d86]">沒有符合的配裝。</p> : null}
     <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] items-start">
       {shown.map((entry) => {
