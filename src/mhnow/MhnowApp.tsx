@@ -3,6 +3,8 @@
 import { assetPath, dataPath } from "./assetPath";
 import { SKILL_CELL, SkillGroups } from "./SkillGroups";
 import { CLEAR_ON_CLOSE_KEY, DEFAULT_CLEAR_ON_CLOSE, FloatingPicker, parseClearOnClose, type ClearOnClose } from "./FloatingPicker";
+import { CommunityBuilds } from "./CommunityBuilds";
+import { fromMhnowMeLink, toMhnowMeLink } from "./mhnowMe";
 import { RecommendPicker } from "./RecommendPicker";
 import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 import { moveBuild } from "./buildStore";
@@ -1277,7 +1279,7 @@ export default function MhnowApp() {
   const [details, setDetails] = useState<Record<string, SeriesDetail>>({});
   const [failedDetails, setFailedDetails] = useState<Record<string, boolean>>({});
   const [icons, setIcons] = useState<Record<string, string>>({});
-  const [view, setView] = useState<"loadout" | "calculator" | "driftstone">("loadout");
+  const [view, setView] = useState<"loadout" | "calculator" | "driftstone" | "community">("loadout");
   const [plans, setPlans] = useState<PlannedGear[]>([]);
   const [plansRestored, setPlansRestored] = useState(false);
   const [plansStorageError, setPlansStorageError] = useState(false);
@@ -1362,7 +1364,7 @@ export default function MhnowApp() {
 
   // 分享單組配裝：sharing 是正在分享的配裝 id；receiving 是貼上（或從網址帶進來）的文字，解析後確認才加入。
   const [sharing, setSharing] = useState<string | null>(null);
-  const [copied, setCopied] = useState<"" | "code" | "link" | "fail">("");
+  const [copied, setCopied] = useState<"" | "code" | "link" | "me" | "fail">("");
   const [receiving, setReceiving] = useState<string | null>(null);
   // 打開分享網址（…#share=MHN1.xxx）時，等存檔讀完再跳出確認，加入後把 hash 清掉，重新整理才不會再問一次。
   useEffect(() => {
@@ -1517,7 +1519,7 @@ export default function MhnowApp() {
     setReceiving(null);
   }
   function openShare(build: Build) { setCopied(""); setSharing(build.id); }
-  async function copyShare(kind: "code" | "link", text: string) { setCopied((await copyText(text)) ? kind : "fail"); }
+  async function copyShare(kind: "code" | "link" | "me", text: string) { setCopied((await copyText(text)) ? kind : "fail"); }
   function deleteBuild(build: Build) {
     if (window.confirm(`刪除「${build.name || "未命名"}」這組配裝？`)) setBuilds((state) => removeBuild(state, build.id));
   }
@@ -1546,10 +1548,11 @@ export default function MhnowApp() {
 
   return <main style={{ "--z": zoom / 100 } as React.CSSProperties} className="min-h-screen bg-[#f4f3ee] text-[#222823]">
     <ZoomControl zoom={zoom} onChange={changeZoom} />
+    {view === "community" ? <p role="status" className="m-0 py-2 px-3 border-b border-[#e6c98a] bg-[#fff6df] text-center text-[14px] font-bold text-[#8a5a00]">⚠ 尚未完成：目前只收錄一部分配裝，還有大量配裝等代碼對照補齊後才會加入。</p> : null}
     <header className="h-[40px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
       <div className="text-center"><strong className="text-[17px]">配裝紀錄</strong></div>
     </header>
-    <nav className="flex flex-wrap justify-center gap-2 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}</nav>
+    <nav className="flex flex-wrap justify-center gap-2 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}{navButton("community", "社群配裝")}</nav>
 
     {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；手機（620px 以下）一律一欄滿版，不留兩側空白。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
@@ -1661,6 +1664,14 @@ export default function MhnowApp() {
       </Modal> : null}
     </section>
 
+    : view === "community" ? <section className="min-[621px]:[zoom:var(--z)] max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
+      <PageHeading eyebrow="COMMUNITY" title="社群配裝" description="mhnow.me 玩家分享的配裝，依按讚數排序。" />
+      <CommunityBuilds series={allSeries} icons={icons} weaponTypeName={weaponTypeName} slotName={slotName} full={builds.builds.length >= MAX_BUILDS}
+        onSkill={(name, level) => setSkillTip({ name, level })}
+        skillsOf={(build) => maxSkillsOf(build, gearRowsOf(build, seriesBy, weaponTypeName, slotName))}
+        onAdd={(build) => { const result = appendBuilds(builds, [build]); if (!result.added) return; setBuilds(result.state); setImportMessage(`已加入「${build.name}」，到「配裝」頁就看得到。`); }} />
+    </section>
+
     : view === "calculator" ? <section className={PAGE}>
       <PageHeading eyebrow="MATERIALS" title="素材計算器" description="選擇對象與階級區間，累計中間所有升級需要的素材與 Zenny。" />
 
@@ -1707,6 +1718,7 @@ export default function MhnowApp() {
       const code = encodeBuildShare(build);
       const link = shareUrl(code, window.location.href);
       const copyButton = "flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer";
+      const me = toMhnowMeLink(build, (key) => seriesBy[key]?.name ?? key);
       return <Modal key={build.id} title={`分享「${build.name || "未命名"}」`} narrow onClose={() => setSharing(null)}>
         <div className="flex justify-center p-2 mb-2 rounded-lg border border-[#e3dac6]"><QrCode text={link} /></div>
         <p className={cx(NOTE, "mt-0 mb-2")}>對方用手機相機掃描就能打開並加入這組配裝；或把分享碼傳給對方，在「貼上分享碼」貼上。只分享裝備與漂流石，不含升級進度。</p>
@@ -1716,16 +1728,26 @@ export default function MhnowApp() {
           <button onClick={() => void copyShare("code", code)} className={copyButton}>{copied === "code" ? "✓ 已複製分享碼" : "複製分享碼"}</button>
           <button onClick={() => void copyShare("link", link)} className={copyButton}>{copied === "link" ? "✓ 已複製連結" : "複製連結"}</button>
         </div>
+        <div className="mt-3 pt-3 border-t border-dashed border-[#e3dac6]">
+          <p className={cx(NOTE, "mt-0 mb-2")}>mhnow.me 連結：貼到 mhnow.me 的模擬器就能打開（只含裝備與漂流石）。</p>
+          {"url" in me ? <button onClick={() => void copyShare("me", me.url)} className={cx(copyButton, "w-full")}>{copied === "me" ? "✓ 已複製 mhnow.me 連結" : "複製 mhnow.me 連結"}</button>
+            : <p className="m-0 text-[12px] text-[#b23a30]">{me.error}</p>}
+        </div>
         {copied === "fail" ? <p role="alert" className="mt-2 mb-0 text-[12px] text-[#b23a30]">無法自動複製，請點上面的分享碼全選後手動複製。</p> : null}
       </Modal>;
     }) : null}
 
     {receiving !== null ? (() => {
-      const result = receiving.trim() ? decodeBuildShare(receiving) : null;
+      // 先當本站分享碼讀；認不得就試試是不是 mhnow.me 的配裝連結。
+      const own = receiving.trim() ? decodeBuildShare(receiving) : null;
+      const other = own && "error" in own ? fromMhnowMeLink(receiving) : null;
+      const result: { build: Build } | { error: string } | null = other && "build" in other
+        ? { build: { id: "", name: "mhnow.me 配裝", gear: other.build.gear, drifts: other.build.drifts, pieces: {}, showMissing: false } }
+        : other && !other.error.startsWith("不是") ? other : own;
       const preview = result && "build" in result ? gearRowsOf(result.build, seriesBy, weaponTypeName, slotName).filter((row) => row.item) : [];
       const stoneCount = result && "build" in result ? Object.values(result.build.drifts).flat().filter(Boolean).length : 0;
       return <Modal title="加入分享的配裝" narrow onClose={() => setReceiving(null)}>
-        <textarea aria-label="貼上分享碼或網址" value={receiving} rows={3} autoFocus placeholder="貼上 MHN1. 開頭的分享碼或分享網址" onChange={(event) => setReceiving(event.target.value)}
+        <textarea aria-label="貼上分享碼或網址" value={receiving} rows={3} autoFocus placeholder="貼上 MHN1. 開頭的分享碼、分享網址，或 mhnow.me 的配裝連結" onChange={(event) => setReceiving(event.target.value)}
           className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md text-[12px] break-all resize-none outline-none focus:border-[#099aa5]" />
         {result && "error" in result ? <p role="alert" className="mt-0 mb-2 text-[12px] text-[#b23a30]">{result.error}</p> : null}
         {result && "build" in result ? <section className="mb-3 p-2 rounded-lg bg-[#fffaf0] border border-[#e3dac6]">

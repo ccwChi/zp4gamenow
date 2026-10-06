@@ -5,6 +5,7 @@ import { assetPath } from "./assetPath";
 import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
+import { popularSkills } from "./popularSkills";
 import { SkillGroups } from "./SkillGroups";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS } from "./damage";
 import { isRecommendable, pieceSkills, pieceSlots, recommendBuilds, swapPiece, weaponSetup, weaponSkillsOf, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
@@ -149,6 +150,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const [query, setQuery] = useState("");
   const [fixed, setFixed] = useState<Partial<Record<Slot, { key: string; grade: number }>>>({});
   const [fixing, setFixing] = useState<Slot | null>(null);
+  const [fixOpen, setFixOpen] = useState(true);
   const [fixQuery, setFixQuery] = useState("");
   const [excluded, setExcluded] = useState<string[]>([]);
   const [excludeOpen, setExcludeOpen] = useState(false);
@@ -329,7 +331,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
               className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-[#f8f8f5] text-[13px] outline-none" />
             <div className="max-h-[260px] overflow-auto">
               <p className={cx(NOTE, "mb-1.5")}>點一下加入／取消，長按看技能說明。</p>
-              <SkillGroups columns="wrap"names={filtered} searching={terms.length > 0} empty={<p className={NOTE}>找不到符合的技能。</p>} renderSkill={(name) => { const on = picks.some((pick) => pick.name === name); return <button key={name} aria-pressed={on} title="長按看說明" {...press(name, () => toggleSkill(name))}
+              <SkillGroups columns="wrap" popular={popularSkills(weaponType)} names={filtered} searching={terms.length > 0} empty={<p className={NOTE}>找不到符合的技能。</p>} renderSkill={(name) => { const on = picks.some((pick) => pick.name === name); return <button key={name} aria-pressed={on} title="長按看說明" {...press(name, () => toggleSkill(name))}
                 className={cx("flex-auto text-center", NO_CALLOUT, "px-3 py-1.5 rounded border text-[15px] cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; }} />
             </div>
           </div>
@@ -337,11 +339,15 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
 
         <section className={SECTION}>
           <div className={SECTION_HEAD}><span>③ 指定部位{Object.keys(fixed).length ? `（${Object.keys(fixed).length}）` : ""}</span>
-            {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixed({}); setFixing(null); }}>清除</button> : null}</div>
-          <div className="p-2 space-y-1.5">
-            <p className={NOTE}>指定某個部位穿哪件、什麼階級，該部位只算這件的技能與洞數；沒有洞就不會鍊成。沒指定的部位自動搭配（G{grade}）。</p>
+            <span className="flex items-center gap-3">
+              {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixed({}); setFixing(null); }}>清除</button> : null}
+              <button aria-expanded={fixOpen} className="border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixOpen(!fixOpen); setFixing(null); }}>{fixOpen ? "收合" : "展開"} {fixOpen ? "▴" : "▾"}</button>
+            </span></div>
+          {fixOpen || Object.keys(fixed).length ? <div className="p-2 space-y-1.5">
+            {fixOpen ? <p className={NOTE}>指定某個部位穿哪件、什麼階級，該部位只算這件的技能與洞數；沒有洞就不會鍊成。沒指定的部位自動搭配（G{grade}）。</p> : null}
             {RECOMMEND_SLOTS.map((slot) => {
               const lock = fixed[slot];
+              if (!fixOpen && !lock) return null;
               const item = lock ? byKey[lock.key] : undefined;
               const lowest = Math.max(1, item?.unlock ?? 1);
               return <div key={slot} className="rounded-md bg-[#fbfaf6] border border-[#eee6d4]">
@@ -378,7 +384,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                 </div> : null}
               </div>;
             })}
-          </div>
+          </div> : null}
         </section>
 
         <section className={SECTION}>

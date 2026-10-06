@@ -9,11 +9,15 @@ export const SKILL_CELL = "w-full min-w-0 text-left";
  * 每個技能長怎樣（按鈕、選中樣式）由 renderSkill 決定，各個選技能的地方共用同一套分類與順序。
  * 每類標題右邊可以收合；searching（正在輸入搜尋）時全部展開，免得符合的技能被收起來看不到。
  */
-export function SkillGroups({ names, renderSkill, empty, searching = false, columns = 2 }: {
+export function SkillGroups({ names, renderSkill, empty, searching = false, columns = 2, popular }: {
   names: Iterable<string>; renderSkill: (name: string) => ReactNode; empty?: ReactNode; searching?: boolean; columns?: 1 | 2 | "wrap";
+  /** 熱門使用的技能（依熱門順序）；會在所有分類最上面多一個「熱門使用」，這些技能在原本的分類裡照樣保留。 */
+  popular?: string[];
 }) {
   const [collapsed, setCollapsed] = useState<string[]>([]);
-  const groups = groupSkills(names);
+  const available = new Set(names);
+  const hot = (popular ?? []).filter((name) => available.has(name));
+  const groups = [...(hot.length ? [{ key: "popular", label: "熱門使用", skills: hot }] : []), ...groupSkills(names)];
   if (!groups.length) return <>{empty ?? null}</>;
   return <div className="flex flex-col gap-3 w-full">
     {groups.map((group) => {
@@ -28,7 +32,7 @@ export function SkillGroups({ names, renderSkill, empty, searching = false, colu
               <span aria-hidden="true" className={open ? "inline-block [transform:rotate(180deg)]" : "inline-block"}>▾</span></span>}
           </button>
         </h4>
-        {open ? <div className={columns === "wrap" ? "flex flex-wrap gap-1" : columns === 1 ? "grid grid-cols-1 gap-1" : "grid grid-cols-2 gap-1"}>{group.skills.map((name) => renderSkill(name))}</div> : null}
+        {open ? <div className={columns === "wrap" ? "flex flex-wrap gap-1 after:content-[''] after:grow-[9999] after:basis-0" : columns === 1 ? "grid grid-cols-1 gap-1" : "grid grid-cols-2 gap-1"}>{group.skills.map((name) => renderSkill(name))}</div> : null}
       </section>;
     })}
   </div>;

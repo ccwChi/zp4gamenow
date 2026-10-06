@@ -14,7 +14,7 @@ const LLMS = "https://mhnow.me/llms-full.txt";
 const iconIdOverrides = {
   "雪鬼獸": "gossharag", "飛毒龍": "vipertobikadachi",
   // 兩邊譯名詞序不同 / llms-full 尚未收錄，直接指定圖檔 id。
-  "銀爵龍": "malzeno", "碎龍": "brachydios",
+  "爵銀龍": "malzeno", "碎龍": "brachydios",
   "冰人魚龍": "aurorasomnacanth",
 };
 // 不是魔物的系列（素材系、活動系），本來就沒有紋章。
