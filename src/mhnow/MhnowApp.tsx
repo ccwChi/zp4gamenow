@@ -225,6 +225,14 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
   </div>;
 }
 
+/** 篩選用的魔物圖示選單（社群配裝的彈出視窗裡）：跟配裝頁選裝備同一個 MonsterPicker，搜尋字與圖片／名稱切換自己記。 */
+function MonsterFilter({ series, icons, value, onPick }: { series: Series[]; icons: Record<string, string>; value: string; onPick: (key: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [display, setDisplay] = useState<"image" | "name">("image");
+  return <MonsterPicker series={series} value={value} onPick={onPick} icons={icons} display={display} onDisplay={setDisplay}
+    query={query} onQuery={setQuery} placeholder="搜尋魔物" />;
+}
+
 /** QR Code（qrcode-generator 算模組，自己畫成 SVG 路徑）；只在螢幕上顯示、不會髒污，容錯用最低的 L，格子才大、好掃。 */
 function QrCode({ text, size = 260 }: { text: string; size?: number }) {
   const { count, path } = useMemo(() => {
@@ -1548,7 +1556,6 @@ export default function MhnowApp() {
 
   return <main style={{ "--z": zoom / 100 } as React.CSSProperties} className="min-h-screen bg-[#f4f3ee] text-[#222823]">
     <ZoomControl zoom={zoom} onChange={changeZoom} />
-    {view === "community" ? <p role="status" className="m-0 py-2 px-3 border-b border-[#e6c98a] bg-[#fff6df] text-center text-[14px] font-bold text-[#8a5a00]">⚠ 尚未完成：目前只收錄一部分配裝，還有大量配裝等代碼對照補齊後才會加入。</p> : null}
     <header className="h-[40px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
       <div className="text-center"><strong className="text-[17px]">配裝紀錄</strong></div>
     </header>
@@ -1666,7 +1673,9 @@ export default function MhnowApp() {
 
     : view === "community" ? <section className="min-[621px]:[zoom:var(--z)] max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
       <PageHeading eyebrow="COMMUNITY" title="社群配裝" description="mhnow.me 玩家分享的配裝，依按讚數排序。" />
-      <CommunityBuilds series={allSeries} icons={icons} weaponTypeName={weaponTypeName} slotName={slotName} full={builds.builds.length >= MAX_BUILDS}
+      <CommunityBuilds series={allSeries} icons={icons} weaponIcons={WEAPON_ICON} weaponTypeName={weaponTypeName} slotName={slotName} full={builds.builds.length >= MAX_BUILDS}
+        monsterPicker={(keys, value, onPick) => <MonsterFilter series={allSeries.filter((item) => keys.includes(item.key))} icons={icons} value={value} onPick={onPick} />}
+        modal={(title, onClose, content) => <Modal title={title} onClose={onClose}>{content}</Modal>}
         onSkill={(name, level) => setSkillTip({ name, level })}
         skillsOf={(build) => maxSkillsOf(build, gearRowsOf(build, seriesBy, weaponTypeName, slotName))}
         onAdd={(build) => { const result = appendBuilds(builds, [build]); if (!result.added) return; setBuilds(result.state); setImportMessage(`已加入「${build.name}」，到「配裝」頁就看得到。`); }} />
