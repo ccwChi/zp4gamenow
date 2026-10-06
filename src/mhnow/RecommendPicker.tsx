@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { assetPath } from "./assetPath";
+import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
 import { SkillGroups } from "./SkillGroups";
@@ -183,7 +184,8 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   }, [maxLevels, series, driftSkills]);
 
   const [weaponKey, weaponType] = weapon.split("::");
-  const weaponTitle = weapon ? `${byKey[weaponKey]?.name ?? ""}${weaponNames[weaponType] ?? ""}` : "";
+  const weaponTitle = weapon ? `${weaponSeriesName(weaponKey, weaponType, byKey[weaponKey]?.name)}${weaponNames[weaponType] ?? ""}` : "";
+  const weaponIcons = iconsForWeapon(icons, weaponType);
   const required = Object.fromEntries(picks.filter((pick) => pick.mode !== "bonus").map((pick) => [pick.name, pick.level]));
   const driftOnly = picks.filter((pick) => pick.mode === "drift").map((pick) => pick.name);
   const bonus = picks.filter((pick) => pick.mode === "bonus").map((pick) => pick.name);
@@ -246,7 +248,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
     <div className="h-full flex flex-col gap-2 text-[13px]">
       <div className="shrink-0 flex items-center gap-2 p-2 rounded-lg bg-[#fffaf0] border border-[#e3dac6]">
         <Icon src={gearIcons.weapon[weaponType]} size={22} />
-        <Icon src={icons[weaponKey]} size={30} fallback={byKey[weaponKey]?.name} />
+        <Icon src={weaponIcons[weaponKey]} size={30} fallback={byKey[weaponKey]?.name} />
         <div className="flex-1 min-w-0">
           <p className="m-0 font-bold truncate">{weaponTitle} · G{grade}{objective === "damage" ? " · 最大傷害" : ""}</p>
           <p className="m-0 text-[12px] text-[#5b635c] truncate">{objective === "damage" ? `${statsText}　` : ""}{picks.map((pick) => pick.mode === "bonus" ? `+${pick.name}` : `${pick.name}${pick.level}`).join("　")}{excluded.length ? `　不配：${excluded.join("、")}` : ""}</p>
@@ -288,7 +290,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
       <div className="flex-1 min-h-0 overflow-auto space-y-2">
         <section className={SECTION}>
           <div className={SECTION_HEAD}>
-            <span className="flex items-center gap-2 min-w-0">{weapon ? <><Icon src={gearIcons.weapon[weaponType]} size={22} /><Icon src={icons[weaponKey]} size={28} fallback={byKey[weaponKey]?.name} /></> : null}
+            <span className="flex items-center gap-2 min-w-0">{weapon ? <><Icon src={gearIcons.weapon[weaponType]} size={22} /><Icon src={weaponIcons[weaponKey]} size={28} fallback={byKey[weaponKey]?.name} /></> : null}
               <span className="truncate">{weapon ? weaponTitle : "① 武器"}</span></span>
             {weapon ? <button className={SMALL_BUTTON} onClick={() => setChoosingWeapon(!choosingWeapon)}>{choosingWeapon ? "收合" : "更換"}</button> : null}
           </div>

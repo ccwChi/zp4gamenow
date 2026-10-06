@@ -4,6 +4,7 @@ import { assetPath, dataPath } from "./assetPath";
 import { SKILL_CELL, SkillGroups } from "./SkillGroups";
 import { CLEAR_ON_CLOSE_KEY, DEFAULT_CLEAR_ON_CLOSE, FloatingPicker, parseClearOnClose, type ClearOnClose } from "./FloatingPicker";
 import { RecommendPicker } from "./RecommendPicker";
+import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 import { moveBuild } from "./buildStore";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
 import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
@@ -308,7 +309,8 @@ function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; ico
         <span aria-hidden="true" className={cx("block w-[30px] h-[30px] max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
       </button>; })}
     </div>
-    {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type))} value={currentType === type ? currentKey : ""} icons={icons} compact
+    {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type)).map((item) => ({ ...item, name: weaponSeriesName(item.key, type, item.name) }))}
+      value={currentType === type ? currentKey : ""} icons={iconsForWeapon(icons, type)} compact
       display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => onPick(`${key}::${type}`)} />
       : <p className={cx(NOTE, "m-0")}>先點上面的武器種類。</p>}
   </>;
