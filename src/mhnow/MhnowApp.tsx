@@ -92,7 +92,7 @@ const cx = (...names: (string | false | null | undefined)[]) => names.filter(Boo
 const BG_ICON = "bg-contain bg-center bg-no-repeat";
 const NOTE = "text-[12px] text-[#858d86] leading-[1.7]";
 /** 裝備列名稱下的小字行（技能、漂流石、武器特性），顏色各自加。 */
-const GEAR_SMALL = "flex flex-wrap gap-x-2.5 gap-y-0.5 text-[12px]";
+const GEAR_SMALL = "flex flex-wrap gap-x-2.5 gap-y-0.5 text-[12px] min-[621px]:text-[15px]";
 /** 不滿版：整頁收成一欄固定寬度置中（仿 mhnow.me）；內容寬 360px（一組裝備的寬度），左右各留 16px（手機 8px）。 */
 const PAGE = "max-w-[392px] mx-auto my-4 px-4 pt-0 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7";
 
@@ -246,6 +246,27 @@ async function copyText(text: string) {
 }
 
 /** narrow：技能說明、漂流石這類內容少的視窗用窄版。 */
+/** 懸浮的字體縮放工具：可拖曳到任何位置，蓋在 Modal 之上，所以放大後點不到的視窗也能再調整。位置存 localStorage。 */
+function ZoomControl({ zoom, onChange }: { zoom: number; onChange: (next: number) => void }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  useEffect(() => {
+    try { const saved = JSON.parse(localStorage.getItem("mhnow-zoom-pos") ?? "null"); if (saved && typeof saved.x === "number" && typeof saved.y === "number") setPos(saved); } catch { /* 用預設位置 */ }
+  }, []);
+  const place = pos ?? { x: 16, y: 56 };
+  const btn = "w-8 h-8 border border-[#cfc7b4] rounded-md bg-white text-[13px] text-[#39423a] cursor-pointer disabled:opacity-40";
+  return <div style={{ left: Math.max(0, Math.min(place.x, (typeof window === "undefined" ? 9999 : window.innerWidth) - 150)), top: Math.max(0, place.y) }}
+    className="max-[620px]:hidden fixed z-[70] flex items-center gap-1 p-1 rounded-lg bg-[#fafaf7]/95 border border-[#cfc7b4] shadow-[0_4px_16px_rgba(0,0,0,.2)]">
+    <span title="拖曳移動" aria-label="拖曳移動字體工具" className="w-5 h-8 grid place-items-center text-[#8b938c] cursor-grab active:cursor-grabbing touch-none select-none"
+      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.parentElement!.getBoundingClientRect(); drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top }; }}
+      onPointerMove={(event) => { if (drag.current) setPos({ x: event.clientX - drag.current.dx, y: event.clientY - drag.current.dy }); }}
+      onPointerUp={() => { drag.current = null; if (pos) try { localStorage.setItem("mhnow-zoom-pos", JSON.stringify(pos)); } catch { /* 只在這次有效 */ } }}>⠿</span>
+    <button aria-label="縮小字體" disabled={zoom <= 80} onClick={() => onChange(zoom - 10)} className={btn}>A-</button>
+    <button aria-label="恢復字體大小" title="恢復 100%" onClick={() => onChange(100)} className={cx(btn, "w-auto min-w-[46px] px-1 tabular-nums")}>{zoom}%</button>
+    <button aria-label="放大字體" disabled={zoom >= 200} onClick={() => onChange(zoom + 10)} className={btn}>A+</button>
+  </div>;
+}
+
 function Modal({ title, onClose, children, narrow, sheet }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean; sheet?: boolean }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -254,7 +275,7 @@ function Modal({ title, onClose, children, narrow, sheet }: { title: string; onC
   }, [onClose]);
   // sheet：手機版從畫面底部滑出（drawer），桌機版維持置中視窗。
   return <div className={cx("fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 z-50", sheet ? "max-[620px]:items-end max-[620px]:p-0" : "max-[620px]:p-2")} onClick={onClose}>
-    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]")} onClick={(event) => event.stopPropagation()}>
+    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] min-[621px]:[zoom:var(--z,1)] min-[621px]:max-h-[calc(86vh/var(--z,1))] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]")} onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3 border-b border-[#e5e7e2] flex-none">
         <strong className="text-[15px]">{title}</strong>
         <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 text-[14px] leading-none cursor-pointer text-[#4b5d50]">✕</button>
@@ -345,13 +366,13 @@ function SkillTiers({ entries, slotGrades }: { entries: SeriesSkill[]; slotGrade
   const tiers = skillTiers(entries, slotGrades);
   if (!tiers.length) return <p className={NOTE}>這件裝備沒有技能。</p>;
   return <div>
-    {tiers.map((tier) => <p key={tier.grade} className="flex items-baseline gap-[7px] m-0 p-0 text-[12px] leading-[1.6]">
-      <b className="flex-[0_0_26px] text-[11px] text-[#8b948c] font-semibold">{tier.grade}-1</b>
-      <span className="text-[12px] text-[#39423a]">
+    {tiers.map((tier) => <p key={tier.grade} className="flex items-baseline gap-[7px] m-0 p-0 text-[12px] min-[621px]:text-[15px] leading-[1.6]">
+      <b className="flex-[0_0_26px] text-[11px] min-[621px]:text-[14px] text-[#8b948c] font-semibold">{tier.grade}-1</b>
+      <span className="text-[12px] min-[621px]:text-[15px] text-[#39423a]">
         {tier.changes.map((change) => <em key={change.name} className="block not-italic">
-          {change.name}<span className="ml-1.5 text-[12px] text-[#3e8e51] font-semibold">{tier.first ? change.to : `${change.from}→${change.to}`}</span>
+          {change.name}<span className="ml-1.5 text-[12px] min-[621px]:text-[15px] text-[#3e8e51] font-semibold">{tier.first ? change.to : `${change.from}→${change.to}`}</span>
         </em>)}
-        {tier.slots ? <em className="block not-italic text-[#39423a]">{"⬡".repeat(tier.slots)} <span className="text-[12px] text-[#5b635c] font-normal">鑲嵌槽 +{tier.slots}</span></em> : null}
+        {tier.slots ? <em className="block not-italic text-[#39423a]">{"⬡".repeat(tier.slots)} <span className="text-[12px] min-[621px]:text-[15px] text-[#5b635c] font-normal">鑲嵌槽 +{tier.slots}</span></em> : null}
       </span>
     </p>)}
   </div>;
@@ -457,7 +478,7 @@ function TraitSummary({ traits }: { traits: WeaponTraits }) {
 /** 狩獵笛的音符：b 藍、r 橘（mhn.quest 的 note-b / note-r 圖示）。 */
 const NOTE_COLOR: Record<string, string> = { b: "text-[#1ea7e8]", r: "text-[#f08a1c]" };
 function Notes({ notes }: { notes: string }) {
-  return <span className="inline-flex flex-[0_0_64px]">{[...notes].map((note, position) => <i key={position} className={cx("not-italic text-[14px] font-bold leading-none", NOTE_COLOR[note])}>♪</i>)}</span>;
+  return <span className="inline-flex flex-[0_0_64px]">{[...notes].map((note, position) => <i key={position} className={cx("not-italic text-[14px] min-[621px]:text-[17px] font-bold leading-none", NOTE_COLOR[note])}>♪</i>)}</span>;
 }
 
 /** 展開區的完整武器特性：每一行「標籤＋值」。 */
@@ -468,8 +489,8 @@ function TraitLine({ label, children }: { label: string; children: ReactNode }) 
 function TraitDetail({ traits }: { traits: WeaponTraits }) {
   const th = "text-left font-semibold text-[#8b938c] py-0.5 px-1 border-b border-[#e8dfcb]";
   const td = "py-[3px] px-1 border-b border-[#f1ebdc]";
-  return <div className="flex flex-col gap-1 text-[12px] text-[#39423a]">
-    {traits.ammo?.length ? <table className="w-full border-collapse text-[12px]">
+  return <div className="flex flex-col gap-1 text-[12px] min-[621px]:text-[15px] text-[#39423a]">
+    {traits.ammo?.length ? <table className="w-full border-collapse text-[12px] min-[621px]:text-[15px]">
       <thead><tr><th className={th}>彈種</th><th className={th}>彈數</th><th className={th}>後座力</th><th className={th}>裝填</th></tr></thead>
       {/* 同一種彈可能佔兩格（冰狼龍輕弩的貫通冰結彈 3 發、4 發），名稱不唯一，key 用順序。 */}
       <tbody>{traits.ammo.map((ammo, position) => <tr key={position}><td className={td}>{ammo.name}</td><td className={cx(td, "text-[#3b7fb8] font-bold")}>{ammo.num}</td><td className={td}>{ammo.recoil}</td><td className={td}>{ammo.reload}</td></tr>)}</tbody>
@@ -658,9 +679,9 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
     const passed = rows.findIndex((row) => row.grade === target) <= nextIndex;
     onChange({ current: next, target: targetForCurrent ? targetForCurrent(next) : !passed ? target : allowNone ? "" : rows[nextIndex + 1]?.grade ?? "" });
   }
-  const label = cx("grid flex-1 text-[#657068]", compact ? "gap-[3px] text-[11px]" : "gap-1.5 text-[15px]");
-  const select = cx("w-full border border-[#ccd3ce] bg-white text-[#17231d]", compact ? "py-[5px] px-1.5 text-[14px] rounded-md" : "p-2.5 text-[17px] rounded-lg");
-  const stepLine = "flex justify-between items-center gap-2 m-0 py-0.5 text-[13px] leading-[1.5]";
+  const label = cx("grid flex-1 text-[#657068]", compact ? "gap-[3px] text-[11px] min-[621px]:text-[14px]" : "gap-1.5 text-[15px]");
+  const select = cx("w-full border border-[#ccd3ce] bg-white text-[#17231d]", compact ? "py-[5px] px-1.5 text-[14px] min-[621px]:text-[17px] rounded-md" : "p-2.5 text-[17px] rounded-lg");
+  const stepLine = "flex justify-between items-center gap-2 m-0 py-0.5 text-[13px] min-[621px]:text-[16px] leading-[1.5]";
   const quantity = "font-bold tabular-nums whitespace-nowrap";
   return <div>
     <div className={cx("flex items-end mt-0 mx-0", compact ? "gap-2 mb-2 p-2 rounded-lg bg-[#f3eee2]" : "gap-3.5 mb-[18px] p-4 rounded-xl bg-[#f5f7f5]")}>
@@ -669,9 +690,9 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
       <label className={label}>目標階級<select className={select} value={target} onChange={(event) => onChange({ ...value, target: event.target.value })}>{allowNone ? <option value="">不升級</option> : null}{rows.filter((row, position) => position > currentIndex).map((row) => <option key={row.grade}>{row.grade}</option>)}</select></label>
     </div>
     {compact ? null : <section className="mt-0 mx-0 mb-4 bg-white border border-[#dfe2dc] rounded-[9px] overflow-hidden">
-      <h3 className="text-[14px] m-0 py-3 px-3.5 border-b border-[#e5e7e2]">逐階明細（{steps.length} 階）</h3>
+      <h3 className="text-[14px] min-[621px]:text-[17px] m-0 py-3 px-3.5 border-b border-[#e5e7e2]">逐階明細（{steps.length} 階）</h3>
       {steps.map((row, position) => <div key={row.grade} className="grid grid-cols-[48px_1fr] gap-2 py-[9px] px-3.5 border-b border-[#eff0ed] last:border-b-0">
-        <b className="text-[14px] text-[#2b332c] leading-[1.7]">{row.grade}{value.current === "unforged" && position === 0 ? <em className="block not-italic text-[10px] font-semibold text-[#e08a00] leading-[1.2]">生產</em> : null}</b>
+        <b className="text-[14px] min-[621px]:text-[17px] text-[#2b332c] leading-[1.7]">{row.grade}{value.current === "unforged" && position === 0 ? <em className="block not-italic text-[10px] min-[621px]:text-[12px] font-semibold text-[#e08a00] leading-[1.2]">生產</em> : null}</b>
         <div>
           <p className={cx(stepLine, "text-[#8b938c] [border-bottom:1px_dashed_#eee6d4] mb-0.5 pb-[3px]")}><span className="flex items-center flex-wrap">Zenny</span><strong className={cx(quantity, "text-[#2b332c]")}>{row.zenny.toLocaleString()}</strong></p>
           {[...row.materials].sort(compareMaterials).map((item, order) => <p key={`${item.name}-${order}`} className={stepLine}><span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}</span><strong className={quantity}>× {item.quantity}</strong></p>)}
@@ -680,17 +701,17 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
     </section>}
     {!target ? <p className={cx(NOTE, "m-0")}>不升級：不計算素材。要規劃升級時再選目標階級。</p> : <>
     <div className={cx("flex items-baseline", compact ? "mt-0 mx-0 mb-2 py-2 px-3 gap-2 rounded-[7px] bg-[#f3eee2] text-[#2b332c]" : "my-5 mx-0 py-[17px] px-5 gap-3 rounded-lg bg-[#28352e] text-white")}>
-      <span className={compact ? "text-[11px]" : "text-[13px]"}>所需 Zenny</span>
+      <span className={compact ? "text-[11px] min-[621px]:text-[14px]" : "text-[13px] min-[621px]:text-[16px]"}>所需 Zenny</span>
       <strong className={cx("ml-auto font-bold tabular-nums", compact ? "text-[20px] text-[#e08a00]" : "text-[31px]")}>{total.zenny.toLocaleString()}</strong>
-      <small className={compact ? "text-[11px] text-[#8b938c]" : "text-[12px] text-[#bac3bc]"}>{total.materials.length} 種素材</small>
+      <small className={compact ? "text-[11px] min-[621px]:text-[14px] text-[#8b938c]" : "text-[12px] min-[621px]:text-[15px] text-[#bac3bc]"}>{total.materials.length} 種素材</small>
     </div>
-    {hasUnknown ? <p className={compact ? "mt-0 mx-0 mb-2 text-[11px] text-[#858d86] leading-[1.7]" : NOTE}>部分階級有素材尚未辨識，暫時顯示原始代碼（如「ib」），詳見 docs/mhnow-待確認事項.md。</p> : null}
+    {hasUnknown ? <p className={compact ? "mt-0 mx-0 mb-2 text-[11px] min-[621px]:text-[14px] text-[#858d86] leading-[1.7]" : NOTE}>部分階級有素材尚未辨識，暫時顯示原始代碼（如「ib」），詳見 docs/mhnow-待確認事項.md。</p> : null}
     <section className={cx("bg-white border border-[#dfe2dc] overflow-hidden", compact ? "m-0 rounded-[7px]" : "mb-4 rounded-[9px]")}>
-      <h3 className={compact ? "hidden" : "text-[14px] m-0 py-[15px] px-[18px] border-b border-[#e5e7e2]"}>素材總計</h3>
+      <h3 className={compact ? "hidden" : "text-[14px] min-[621px]:text-[17px] m-0 py-[15px] px-[18px] border-b border-[#e5e7e2]"}>素材總計</h3>
       <div className={cx("grid", compact ? "grid-cols-[1fr] py-0.5 px-2.5" : "grid-cols-[1fr_1fr] py-1.5 px-[18px] max-[720px]:grid-cols-[1fr]")}>{total.materials.map((item) => <p key={item.name}
-        className={cx("flex justify-between m-0 border-b border-[#eff0ed]", compact ? "py-1.5 text-[12px]" : "py-[11px] text-[13px] odd:mr-[22px] max-[720px]:odd:mr-0")}>
-        <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}{item.unknown ? <small className="block text-[#8a8a8a] text-[14px] font-normal mt-0.5">尚未辨識</small> : null}</span>
-        <strong className={cx("font-bold tabular-nums", compact ? "text-[13px]" : "text-[15px]")}>× {item.quantity}</strong>
+        className={cx("flex justify-between m-0 border-b border-[#eff0ed]", compact ? "py-1.5 text-[12px] min-[621px]:text-[15px]" : "py-[11px] text-[13px] min-[621px]:text-[16px] odd:mr-[22px] max-[720px]:odd:mr-0")}>
+        <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}{item.unknown ? <small className="block text-[#8a8a8a] text-[14px] min-[621px]:text-[17px] font-normal mt-0.5">尚未辨識</small> : null}</span>
+        <strong className={cx("font-bold tabular-nums", compact ? "text-[13px] min-[621px]:text-[16px]" : "text-[15px]")}>× {item.quantity}</strong>
       </p>)}</div>
     </section>
     </>}
@@ -745,7 +766,7 @@ function maxSkillsOf(build: Build, rows: GearRow[]) {
 
 /** 收合時列在裝備下方：從目前階級升到目標階級還要的 Zenny 與素材。 */
 function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefined; range: GradeRange; waived?: boolean }) {
-  const frame = "flex-[0_0_100%] pt-1.5 px-2.5 pb-2 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7] text-[12px] text-[#39423a]";
+  const frame = "flex-[0_0_100%] pt-1.5 px-2.5 pb-2 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7] text-[12px] min-[621px]:text-[15px] text-[#39423a]";
   // 沒選目標就不列（也不會去抓升級資料），要先判斷，不然會一直停在「載入中」。
   if (!range.target) return null;
   if (!rows) return <div className={cx(frame, "text-[#858d86]")}>升級資料載入中……</div>;
@@ -754,9 +775,9 @@ function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefine
   if (!target) return null;
   const total = calculateRange(rows, range.current, target);
   return <div className={frame}>
-    <p className="flex justify-between items-baseline m-0 mb-0.5 text-[11px] text-[#6d756e]">
+    <p className="flex justify-between items-baseline m-0 mb-0.5 text-[11px] min-[621px]:text-[14px] text-[#6d756e]">
       <span>缺少素材　{range.current === "unforged" ? "尚未生產" : range.current} → {target}{waived ? <b className="ml-1.5 font-normal text-[#087b84]">減免中</b> : null}</span>
-      <span>Zenny <b className="text-[12px] text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
+      <span>Zenny <b className="text-[12px] min-[621px]:text-[15px] text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
     </p>
     {total.materials.map((item) => <p key={item.name} className="flex justify-between items-center m-0 py-px leading-[1.5]">
       <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}</span>
@@ -795,7 +816,7 @@ function SortableBuild({ id, name, children, onMove, onStep }: {
   const [drop, setDrop] = useState<{ id: string; side: "before" | "after"; x: number; y: number; width: number; height: number } | null>(null);
   return <div data-sort-build={id} className={cx("min-w-0 rounded-xl", dragging && "opacity-70 ring-2 ring-[#099aa5]")}>
     <button aria-label={`移動${name}`} title="拖曳移動配裝；也可聚焦後按方向鍵前後移動"
-      className="w-full border-0 bg-transparent text-[#687168] text-[12px] py-1 cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline-[#099aa5]"
+      className="w-full border-0 bg-transparent text-[#687168] text-[12px] min-[621px]:text-[15px] py-1 cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline-[#099aa5]"
       onKeyDown={(event) => {
         if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
           event.preventDefault(); onStep(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1);
@@ -837,7 +858,7 @@ function CurrentGradeInput({ value, title, onCommit }: { value: string; title: s
     title={invalid ? "請輸入 2-1 到 10-5，例如 6-1" : "目前等級：2-1 到 10-5；Enter 或離開欄位儲存，清空表示尚未生產"}
     onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit}
     onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setDraft(value === "unforged" ? "" : value); setInvalid(false); } }}
-    className={cx("w-12 box-border rounded border bg-white px-0.5 py-0.5 text-center text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#099aa5]", invalid ? "border-red-500 text-red-700" : "border-[#d8d0bd] text-[#28352e]")} />;
+    className={cx("w-12 box-border rounded border bg-white px-0.5 py-0.5 text-center text-[11px] min-[621px]:text-[14px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#099aa5]", invalid ? "border-red-500 text-red-700" : "border-[#d8d0bd] text-[#28352e]")} />;
 }
 
 function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete, onShare }: {
@@ -848,12 +869,12 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
   const skills = maxSkillsOf(build, rows);
   const stones = driftStonesBySkill(build, rows, ctx.driftstones);
   const anyStone = Object.keys(stones).length > 0;
-  const h4 = (first?: boolean) => cx("mb-1.5 mx-0 text-[12px] text-[#6d756e] font-bold", first ? "mt-1 pt-0" : "mt-3 pt-2.5 [border-top:1px_dashed_#e8dfcb]");
-  const toolButton = "flex-none py-1 px-2 border rounded-md text-[12px] cursor-pointer";
+  const h4 = (first?: boolean) => cx("mb-1.5 mx-0 text-[12px] min-[621px]:text-[15px] text-[#6d756e] font-bold", first ? "mt-1 pt-0" : "mt-3 pt-2.5 [border-top:1px_dashed_#e8dfcb]");
+  const toolButton = "flex-none py-1 px-2 border rounded-md text-[12px] min-[621px]:text-[15px] cursor-pointer";
   return <article id={`build-${build.id}`} className="min-w-0 flex flex-col gap-1.5 p-2 max-[620px]:p-1.5 rounded-xl bg-[#ece8dc] border border-[#d8d0bd]">
     <div className="flex items-center gap-1.5">
       <input aria-label="配裝名稱" value={build.name} maxLength={20} placeholder="配裝名稱" onChange={(event) => { const name = event.target.value; onChange((next) => ({ ...next, name })); }}
-        className="flex-1 min-w-0 py-1 px-2 border border-[#d8d0bd] rounded-md bg-white text-[13px] font-bold text-[#2b332c] outline-none focus:border-[#099aa5]" />
+        className="flex-1 min-w-0 py-1 px-2 border border-[#d8d0bd] rounded-md bg-white text-[13px] min-[621px]:text-[16px] font-bold text-[#2b332c] outline-none focus:border-[#099aa5]" />
       <button aria-pressed={build.showMissing} title="有設定目標階級的裝備，都在下方列出還缺的素材" onClick={() => onChange((next) => ({ ...next, showMissing: !next.showMissing }))}
         className={cx(toolButton, build.showMissing ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>{build.showMissing ? "✓ " : ""}顯示缺少素材</button>
       <button title="產生分享碼與 QR Code，別人貼上就能加入這組配裝" onClick={onShare}
@@ -862,7 +883,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         className={cx(toolButton, "border-[#e3b8b4] bg-white text-[#b23a30]")}>刪除</button>
     </div>
 
-    <button onClick={onSkillGear} className="py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] text-[13px] cursor-pointer">依技能選全身裝備</button>
+    <button onClick={onSkillGear} className="py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] text-[13px] min-[621px]:text-[16px] cursor-pointer">依技能選全身裝備</button>
     {rows.map((row) => {
       const isOpen = open(row.id);
       const piece = pieceOf(build, row.id, row.itemKey);
@@ -885,22 +906,22 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
           {row.item ? <>
             {ctx.icons[row.item.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item.key])})` }} /> : null}
             <span className="min-w-0 flex flex-col gap-0.5">
-              <strong className="text-[14px] font-bold truncate">{row.title}</strong>
+              <strong className="text-[14px] min-[621px]:text-[17px] font-bold truncate">{row.title}</strong>
               <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{Object.entries(skillsAtGrade(row.entries, MAX_GRADE)).map(([name, level]) => <span key={name}>{name} <b className="text-[#e08a00] font-bold">{level}</b></span>)}</small>
               {drifts.slice(0, row.slotGrades.length).some(Boolean) ? <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{drifts.slice(0, row.slotGrades.length).map((pick, position) => pick
                 ? <span key={position} className="inline-flex items-center gap-[3px]"><DriftHex color={driftColor(pick, ctx.driftstones)} size={11} />{pick.skill}</span> : null)}</small> : null}
               {row.traits && !row.itemKey.endsWith("::insect-glaive") ? <TraitSummary traits={row.traits} /> : null}
             </span>
-          </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="text-[14px] font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
+          </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="text-[14px] min-[621px]:text-[17px] font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
         </button>
         {row.item && row.slotGrades.length ? <span className="flex-none flex items-center gap-0.5 px-0.5">
           {row.slotGrades.map((grade, position) => { const pick = drifts[position]; return <button key={position}
-            className={cx("border-0 bg-transparent py-1 px-[3px] rounded-md text-[18px] leading-none cursor-pointer hover:bg-[#f3ecdb]", pick ? "" : "text-[#8a939c] hover:text-[#39423a]")}
+            className={cx("border-0 bg-transparent py-1 px-[3px] rounded-md text-[18px] min-[621px]:text-[21px] leading-none cursor-pointer hover:bg-[#f3ecdb]", pick ? "" : "text-[#8a939c] hover:text-[#39423a]")}
             title={pick ? `${pick.skill}（${grade}-1 解鎖）點擊更換` : `鑲嵌槽（${grade}-1 解鎖）點擊選漂流石技能`}
             onClick={() => onDrift(row.id as ArmorSlot, position)}>{pick ? <DriftHex color={driftColor(pick, ctx.driftstones)} size={17} /> : "⬡"}</button>; })}
         </span> : null}
         {row.item ? <button aria-label="升級明細" title="升級明細" onClick={() => onToggle(row.id)}
-          className={cx("flex-[0_0_32px] border-0 border-l border-[#eee6d4] bg-transparent cursor-pointer text-[14px] hover:bg-[#f6efdf]", isOpen ? "text-[#099aa5]" : "text-[#8b938c]")}>
+          className={cx("flex-[0_0_32px] border-0 border-l border-[#eee6d4] bg-transparent cursor-pointer text-[14px] min-[621px]:text-[17px] hover:bg-[#f6efdf]", isOpen ? "text-[#099aa5]" : "text-[#8b938c]")}>
           <span className={cx("inline-block [transition:transform_.15s]", isOpen && "[transform:rotate(180deg)]")}>▾</span>
         </button> : null}
         {row.item && isOpen ? <div className="flex-[0_0_100%] pt-2 px-3 pb-3 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7]">
@@ -921,12 +942,12 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
       <div className="grid grid-cols-2 gap-x-5 gap-y-2">{Object.entries(skills).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hant")).map(([name, level]) => {
         const cap = ctx.skillLevels[name]?.length; const segments = cap ?? Math.max(BAR_SEGMENTS, level);
         return <button key={name} className="block w-full border-0 bg-transparent py-1 px-1.5 -my-1 -mx-1.5 box-content text-left cursor-pointer rounded-md hover:bg-[#f3ecdb]" onClick={() => onSkill(name, level)}>
-          <p className="flex justify-between items-baseline gap-1 mt-0 mx-0 mb-1 text-[13px] text-[#2b332c]"><span className="min-w-0">{name}</span><b className={cx("text-[14px]", cap !== undefined && level > cap ? "text-[#d23c3c]" : "text-[#e08a00]")}>{level}</b></p>
+          <p className="flex justify-between items-baseline gap-1 mt-0 mx-0 mb-1 text-[13px] min-[621px]:text-[16px] text-[#2b332c]"><span className="min-w-0">{name}</span><b className={cx("text-[14px] min-[621px]:text-[17px]", cap !== undefined && level > cap ? "text-[#d23c3c]" : "text-[#e08a00]")}>{level}</b></p>
           <div className="flex items-center gap-1">
             <div className="flex-1 min-w-0 flex gap-[3px]">{Array.from({ length: segments }, (_, position) => <i key={position}
               className={cx("flex-[0_0_calc((100%_-_4*3px)/5)] h-2 [transform:skewX(-20deg)] rounded-[1px]", position < level ? "bg-[#f59a00]" : "bg-[#dcd6c8]")} />)}</div>
             {anyStone ? <span className="flex-none min-w-[22px] h-2 flex items-center justify-end gap-1 overflow-visible">
-              {Object.entries(stones[name] ?? {}).map(([color, count]) => <span key={color} title={`漂流石 ${count} 顆`} className="inline-flex items-center gap-px text-[10px] font-bold leading-none text-[#5b635c]">
+              {Object.entries(stones[name] ?? {}).map(([color, count]) => <span key={color} title={`漂流石 ${count} 顆`} className="inline-flex items-center gap-px text-[10px] min-[621px]:text-[12px] font-bold leading-none text-[#5b635c]">
                 <DriftHex color={color} size={11} />{count > 1 ? count : null}
               </span>)}
             </span> : null}
@@ -1300,6 +1321,16 @@ export default function MhnowApp() {
   // 按「清除」就換一個 key，讓視窗內容重新掛載回到空白（視窗本身不關）。
   const [recommendReset, setRecommendReset] = useState(0);
   const [skillGearReset, setSkillGearReset] = useState(0);
+  // 配裝畫面的縮放（只在桌機生效）：存 localStorage，讀不到就用 100%。
+  const [zoom, setZoom] = useState(100);
+  useEffect(() => {
+    try { const saved = Number(localStorage.getItem("mhnow-zoom")); if (saved >= 80 && saved <= 200) setZoom(saved); } catch { /* 用預設 */ }
+  }, []);
+  function changeZoom(next: number) {
+    const value = Math.min(200, Math.max(80, next));
+    setZoom(value);
+    try { localStorage.setItem("mhnow-zoom", String(value)); } catch { /* 只在這次有效 */ }
+  }
   useEffect(() => {
     try { setClearOnClose(parseClearOnClose(localStorage.getItem(CLEAR_ON_CLOSE_KEY))); } catch { /* 讀不到就用預設（不清除） */ }
     setClearRestored(true);
@@ -1513,7 +1544,8 @@ export default function MhnowApp() {
   const navButton =(mode: typeof view, label: string) => <button onClick={() => setView(mode)}
     className={cx("border rounded-full py-2 px-6 cursor-pointer", view === mode ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white border-[#d9d9d9]")}>{label}</button>;
 
-  return <main className="min-h-screen bg-[#f4f3ee] text-[#222823]">
+  return <main style={{ "--z": zoom / 100 } as React.CSSProperties} className="min-h-screen bg-[#f4f3ee] text-[#222823]">
+    <ZoomControl zoom={zoom} onChange={changeZoom} />
     <header className="h-[40px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
       <div className="text-center"><strong className="text-[17px]">配裝紀錄</strong></div>
     </header>
@@ -1521,7 +1553,7 @@ export default function MhnowApp() {
 
     {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；手機（620px 以下）一律一欄滿版，不留兩側空白。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
-    {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7 grid gap-3 max-[620px]:gap-2 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))] max-[620px]:grid-cols-[minmax(0,1fr)]">
+    {view === "loadout" ? <section className="min-[621px]:[zoom:var(--z)] my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7 grid gap-3 max-[620px]:gap-2 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))] min-[621px]:grid-cols-[repeat(auto-fill,minmax(min(100%,430px),430px))] max-[620px]:grid-cols-[minmax(0,1fr)]">
       <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         {/* 手機版：標題自成一列，「建議配裝」放在標題同一列的最右邊；桌機版維持在右側工具列的第一個。 */}
         <div className="flex items-center justify-between gap-2 max-[620px]:basis-full">
@@ -1529,6 +1561,7 @@ export default function MhnowApp() {
           {recommendButton("hidden max-[620px]:inline-block")}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          
           {recommendButton("max-[620px]:hidden")}
           <button aria-pressed={discounted.length > 0} title="活動素材減免：選了的魔物，武器升級不需要採集素材與尖爪" onClick={() => { setDiscountQuery(""); setDiscountPickerOpen(true); }}
             className={cx("py-1 px-2.5 border rounded-md text-[12px] cursor-pointer", discounted.length ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
