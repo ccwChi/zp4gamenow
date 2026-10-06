@@ -9,8 +9,8 @@ export const SKILL_CELL = "w-full min-w-0 text-left";
  * 每個技能長怎樣（按鈕、選中樣式）由 renderSkill 決定，各個選技能的地方共用同一套分類與順序。
  * 每類標題右邊可以收合；searching（正在輸入搜尋）時全部展開，免得符合的技能被收起來看不到。
  */
-export function SkillGroups({ names, renderSkill, empty, searching = false }: {
-  names: Iterable<string>; renderSkill: (name: string) => ReactNode; empty?: ReactNode; searching?: boolean;
+export function SkillGroups({ names, renderSkill, empty, searching = false, columns = 2 }: {
+  names: Iterable<string>; renderSkill: (name: string) => ReactNode; empty?: ReactNode; searching?: boolean; columns?: 1 | 2 | "wrap";
 }) {
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const groups = groupSkills(names);
@@ -28,7 +28,7 @@ export function SkillGroups({ names, renderSkill, empty, searching = false }: {
               <span aria-hidden="true" className={open ? "inline-block [transform:rotate(180deg)]" : "inline-block"}>▾</span></span>}
           </button>
         </h4>
-        {open ? <div className="grid grid-cols-2 gap-1">{group.skills.map((name) => renderSkill(name))}</div> : null}
+        {open ? <div className={columns === "wrap" ? "flex flex-wrap gap-1" : columns === 1 ? "grid grid-cols-1 gap-1" : "grid grid-cols-2 gap-1"}>{group.skills.map((name) => renderSkill(name))}</div> : null}
       </section>;
     })}
   </div>;

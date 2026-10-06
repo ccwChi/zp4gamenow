@@ -31,6 +31,8 @@ export type RecommendOptions = {
   driftOnly?: string[];
   /** 非必備、只用來排序的技能。 */
   bonus?: string[];
+  /** 不配裝的技能：帶有這些技能的防具不會出現在結果，漂流石也不會鍊這些技能。 */
+  exclude?: string[];
   /** 各技能的等級上限；沒給就視為沒有上限。 */
   maxLevels?: Record<string, number>;
   /** 有給就是最大傷害模式：空洞自動鍊成最能提高傷害的技能，排序改成傷害高 → 鍊成少。conditions 是勾選會發動的條件技能。 */
@@ -49,6 +51,11 @@ export function weaponSetup(item: RecommendSeries, weaponType: string, grade: nu
 /** 某系列某部位在指定階級的技能（不含樣式專屬技能）。 */
 export function pieceSkills(item: RecommendSeries | undefined, slot: Slot, grade: number) {
   return skillsAt(item?.skills[slot] ?? [], grade);
+}
+
+/** 某系列、某武器種類在指定階級的武器技能。 */
+export function weaponSkillsOf(item: RecommendSeries | undefined, weaponType: string, grade: number) {
+  return skillsAt(item?.weaponSkills?.[weaponType] ?? item?.skills.weapon ?? [], grade);
 }
 
 function skillsAt(entries: SeriesSkill[], grade: number) {
@@ -126,12 +133,18 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     for (const skill of stones.common) offer(skill, "common", false);
     for (const event of stones.events) for (const skill of event.skills) offer(skill, "event", event.rare?.includes(skill) ?? true);
   }
+  const excluded = new Set(options.exclude ?? []);
+  for (const skill of excluded) {
+    if (options.required[skill] !== undefined || bonusSkills.includes(skill)) throw new Error(`「${skill}」同時設為需要與不配裝，請擇一。`);
+    driftPool.delete(skill);
+  }
   for (const skill of driftOnly) {
     if (!includeDrifts) throw new Error("已指定技能全靠漂流鍊成，請開啟允許漂流石。");
     if (!driftPool.has(skill)) throw new Error(`目前漂流石資料沒有「${skill}」，無法指定全靠漂流鍊成。`);
   }
 
   const base = skillsAt(selected.weaponSkills?.[weaponType] ?? selected.skills.weapon ?? [], grade);
+  for (const skill of Object.keys(base)) if (excluded.has(skill)) throw new Error(`這把武器自帶「${skill}」，無法排除。`);
 
   // 最大傷害模式：會影響傷害的技能（依武器屬性與勾選的條件），以及其中可以鍊成的。
   const setup = options.damage ? weaponSetup(selected, weaponType, grade) : undefined;
@@ -181,6 +194,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     for (const item of series) {
       if (!item.hasArmor || (item.unlock ?? 1) > grade || (item.skills[slot] === undefined && item.slots?.[slot] === undefined)) continue;
       const skills = skillsAt(item.skills[slot] ?? [], grade);
+      if (Object.keys(skills).some((skill) => excluded.has(skill))) continue;
       const slots = includeDrifts ? (item.slots?.[slot] ?? []).filter((unlock) => unlock <= grade).length : 0;
       const vector = [
         ...native.map(([skill, level]) => Math.min(level, skills[skill] ?? 0)),

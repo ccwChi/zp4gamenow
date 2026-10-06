@@ -245,14 +245,15 @@ async function copyText(text: string) {
 }
 
 /** narrow：技能說明、漂流石這類內容少的視窗用窄版。 */
-function Modal({ title, onClose, children, narrow }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean }) {
+function Modal({ title, onClose, children, narrow, sheet }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean; sheet?: boolean }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  return <div className="fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 max-[620px]:p-2 z-50" onClick={onClose}>
-    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]")} onClick={(event) => event.stopPropagation()}>
+  // sheet：手機版從畫面底部滑出（drawer），桌機版維持置中視窗。
+  return <div className={cx("fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 z-50", sheet ? "max-[620px]:items-end max-[620px]:p-0" : "max-[620px]:p-2")} onClick={onClose}>
+    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]")} onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3 border-b border-[#e5e7e2] flex-none">
         <strong className="text-[15px]">{title}</strong>
         <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 text-[14px] leading-none cursor-pointer text-[#4b5d50]">✕</button>
@@ -297,14 +298,14 @@ function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; ico
   const [query, setQuery] = useState("");
   const [display, setDisplay] = useState<"image" | "name">("image");
   return <>
-    <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1 mb-2">
+    <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1 mb-2 max-[620px]:grid max-[620px]:grid-cols-7">
       {ALL_WEAPON_TYPES.map((option) => { const on = type === option; return <button key={option} aria-pressed={on} title={WEAPON_NAMES[option]} aria-label={WEAPON_NAMES[option]}
         onClick={() => {
           setType(option);
           if (currentKey && series.find((item) => item.key === currentKey)?.weaponTypes.includes(option)) onPick(`${currentKey}::${option}`);
         }}
-        className={cx("w-10 h-10 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-        <span aria-hidden="true" className={cx("block w-7 h-7", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
+        className={cx("w-10 h-10 max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+        <span aria-hidden="true" className={cx("block w-7 h-7 max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
       </button>; })}
     </div>
     {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type))} value={currentType === type ? currentKey : ""} icons={icons} compact
@@ -1591,6 +1592,7 @@ export default function MhnowApp() {
       {recommendMounted && index && driftstones ? <RecommendPicker key={recommendReset} series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
         icons={icons} gearIcons={{ weapon: WEAPON_ICON, armor: ARMOR_ICON }}
         weaponPicker={(value, onPick) => <WeaponChooser series={weaponSeries} icons={icons} value={value} onPick={onPick} />}
+        onSkill={(name, level) => setSkillTip({ name, level })}
         visible={recommendOpen} clearOnClose={clearOnClose.recommend} onClearOnClose={(recommend) => setClearOnClose((state) => ({ ...state, recommend }))}
         onClear={() => setRecommendReset((count) => count + 1)} onClose={closeRecommend} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
       {/* 不用 build.id 當 key：換一組配裝打開時，搜尋條件也沿用，只是選的裝備套到新的那組。 */}
@@ -1717,7 +1719,7 @@ export default function MhnowApp() {
       </div>
     </Modal> : null}
 
-    {skillTip ? <Modal title={skillTip.name} narrow onClose={() => setSkillTip(null)}>
+    {skillTip ? <Modal title={skillTip.name} narrow sheet onClose={() => setSkillTip(null)}>
       {index?.skillLevels[skillTip.name]?.length ? <ol className="list-none m-0 p-0 flex flex-col gap-1">
         {index.skillLevels[skillTip.name].map((text, position) => { const current = position + 1 === Math.min(skillTip.level, index.skillLevels[skillTip.name].length); return <li key={position}
           className={cx("flex gap-2.5 py-[7px] px-2.5 rounded-md text-[13px] leading-[1.5]", current ? "bg-[#fff3dc] text-[#2b332c] shadow-[inset_3px_0_0_#f59a00]" : "text-[#5b635c]")}>
