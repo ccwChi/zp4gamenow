@@ -40,6 +40,11 @@ export type RecommendOptions = {
   limit?: number; signal?: AbortSignal;
 };
 
+/** 建議配裝的防具只用守護者與魔物系列；合金、皮製與各種活動裝備（key 以年份結尾，例如 ny-24；或萬聖節）不列入。 */
+export function isRecommendable(item: Pick<RecommendSeries, "key">) {
+  return item.key === "guardian" || !(["alloy", "leather", "halloween"].includes(item.key) || /-\d{2}$/.test(item.key));
+}
+
 /** 武器在指定階級（取 -5）的攻擊、屬性、會心率。 */
 export function weaponSetup(item: RecommendSeries, weaponType: string, grade: number): WeaponSetup | undefined {
   const element = item.weaponEff?.[weaponType] ?? item.weaponElement ?? "white";
@@ -192,7 +197,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
   const pools = RECOMMEND_SLOTS.map((slot) => {
     const groups = new Map<string, Choice[]>();
     for (const item of series) {
-      if (!item.hasArmor || (item.unlock ?? 1) > grade || (item.skills[slot] === undefined && item.slots?.[slot] === undefined)) continue;
+      if (!item.hasArmor || !isRecommendable(item) || (item.unlock ?? 1) > grade || (item.skills[slot] === undefined && item.slots?.[slot] === undefined)) continue;
       const skills = skillsAt(item.skills[slot] ?? [], grade);
       if (Object.keys(skills).some((skill) => excluded.has(skill))) continue;
       const slots = includeDrifts ? (item.slots?.[slot] ?? []).filter((unlock) => unlock <= grade).length : 0;

@@ -6,7 +6,7 @@ import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
 import { SkillGroups } from "./SkillGroups";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS } from "./damage";
-import { pieceSkills, recommendBuilds, swapPiece, weaponSetup, weaponSkillsOf, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
+import { isRecommendable, pieceSkills, recommendBuilds, swapPiece, weaponSetup, weaponSkillsOf, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
 
 type Slot = typeof RECOMMEND_SLOTS[number];
 /** need：必備（原生＋漂流補足）；drift：必備且全部靠漂流鍊成；bonus：非必備，只用來排序。 */
@@ -171,8 +171,13 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
     }
     return levels;
   }, [series, skillLevels]);
-  const skillNames = useMemo(() => Object.keys(maxLevels).sort((a, b) => a.localeCompare(b, "zh-Hant")), [maxLevels]);
   const driftSkills = useMemo(() => new Set([...stones.colors.flatMap((color) => color.skills.map((item) => item.name)), ...stones.common, ...stones.events.flatMap((event) => event.skills)]), [stones]);
+  // 只列得出來的技能：守護者／魔物防具（不含合金、皮製與活動裝備）帶的，或漂流石能鍊的。
+  const skillNames = useMemo(() => {
+    const usable = new Set(driftSkills);
+    for (const item of series) if (item.hasArmor && isRecommendable(item)) for (const slot of RECOMMEND_SLOTS) for (const entry of item.skills[slot] ?? []) usable.add(entry.skill);
+    return Object.keys(maxLevels).filter((name) => usable.has(name)).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  }, [maxLevels, series, driftSkills]);
 
   const [weaponKey, weaponType] = weapon.split("::");
   const weaponTitle = weapon ? `${byKey[weaponKey]?.name ?? ""}${weaponNames[weaponType] ?? ""}` : "";
