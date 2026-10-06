@@ -44,7 +44,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
 }) {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
-  // 篩選：武器種類（小圖示直接列出）、魔物（點按鈕彈出視窗選；武器或任一件防具用到就算）都是單選，再點一次取消；
+  // 篩選：武器種類（小圖示直接列出）、魔物（點按鈕彈出視窗選；只看武器是哪隻魔物的，防具不算）都是單選，再點一次取消；
   // 技能 tag 從「這個武器＋這隻魔物」的配裝裡整理出來，可複選，有任一個選中的技能就列出（OR）。
   const [type, setType] = useState("");
   const [monster, setMonster] = useState("");
@@ -56,7 +56,8 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
     fetch(dataPath("/mhnow/community-builds.json")).then((response) => response.json()).then(setData, () => setFailed(true));
   }, []);
   const nameOf = useMemo(() => Object.fromEntries(series.map((item) => [item.key, item.name])), [series]);
-  const uses = (entry: Entry, key: string) => Object.values(entry.gear).some((gear) => gear.split("::")[0] === key);
+  /** 武器是哪隻魔物的（系列代號）；魔物篩選只看武器，防具用到不算。 */
+  const weaponMonster = (entry: Entry) => entry.gear.weapon.split("::")[0];
   const builds = data?.builds ?? [];
   // 每套的技能總和要算幾千次（tag 清單、篩選、卡片），算過的依排名記起來。
   // 系列資料或社群資料換了（例如系列資料比較晚載入）就重新算，免得記住空的技能。
@@ -67,7 +68,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
     return skills;
   };
   const ofType = type ? builds.filter((entry) => entry.type === type) : builds;
-  const ofMonster = monster ? ofType.filter((entry) => uses(entry, monster)) : ofType;
+  const ofMonster = monster ? ofType.filter((entry) => weaponMonster(entry) === monster) : ofType;
   // 技能 tag：目前武器＋魔物的配裝裡出現過的技能；換了武器或魔物，不在清單裡的已選技能就不算。
   // 技能 tag 要先選魔物才出現（沒選魔物時清單太長、也沒有篩選意義），沒選魔物就不套用技能篩選。
   const skillNames = monster ? [...new Set(ofMonster.flatMap((entry) => Object.keys(skillsOfEntry(entry))))] : [];
@@ -78,10 +79,12 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   const percent = (name: string) => `${Math.round(skillShare[name] * 100)}%`;
   const activeSkills = chosenSkills.filter((name) => skillNames.includes(name));
   const matches = activeSkills.length ? ofMonster.filter((entry) => activeSkills.some((name) => skillsOfEntry(entry)[name])) : ofMonster;
-  // 魔物選單只列出「目前武器種類的配裝裡有用到」的，選了才不會變成空的。
-  const monsterKeys = [...new Set(ofType.flatMap((entry) => Object.values(entry.gear).map((gear) => gear.split("::")[0])))];
+  // 魔物選單只列出「目前武器種類裡有這隻魔物的武器配裝」的，選了才不會變成空的。
+  const monsterKeys = [...new Set(ofType.map(weaponMonster))];
   const types = Object.keys(weaponIcons).filter((option) => builds.some((entry) => entry.type === option));
   const shown = matches.slice(0, limit);
+  // 先選武器或先選魔物都可以：選了魔物後，這隻魔物沒有配裝資料的武器種類會停用，所以不會選成 0 套。
+  const typeAvailable = (option: string) => !monster || builds.some((entry) => entry.type === option && weaponMonster(entry) === monster);
   const pickType = (option: string) => { setType(type === option ? "" : option); setLimit(PAGE_SIZE); };
   const pickMonster = (key: string) => { setMonster(monster === key ? "" : key); setLimit(PAGE_SIZE); setChoosingMonster(false); };
   const toggleSkill = (name: string) => { setChosenSkills(activeSkills.includes(name) ? activeSkills.filter((item) => item !== name) : [...activeSkills, name]); setLimit(PAGE_SIZE); };
@@ -94,20 +97,21 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   if (failed) return <p role="alert" className="text-[13px] text-[#b23a30]">社群配裝載入失敗，請重新整理。</p>;
   if (!data) return <p className="text-[13px] text-[#858d86]">載入中……</p>;
   return <div className="flex flex-col gap-3">
-    <p className="m-0 text-[12px] text-[#858d86] leading-[1.7]">
+    {/* <p className="m-0 text-[12px] text-[#858d86] leading-[1.7]">
       資料來自 <a href={data.source} target="_blank" rel="noreferrer" className="text-[#087b84]">MHNOW.ME</a> 玩家社群的人氣配裝（{data.license}），
       快照時間 {data.fetchedAt.slice(0, 10)}，
       {data.rankTotal && data.rankTotal > data.builds.length
         ? <>站方排行共 {data.rankTotal} 套，收錄其中 {data.builds.length} 套；其餘含有我們還對不到代碼的漂流石技能或活動武器，確認後會陸續補上。</>
         : <>共 {data.builds.length} 套。</>}
       加進自己的配裝後，漂流石需要的鑲嵌洞數請自行確認。
-    </p>
+    </p> */}
     <section className="flex flex-col gap-2 p-2.5 rounded-xl bg-white border border-[#dfe2dc]">
       <div className="flex gap-2"><span className={label}>武器</span>
         <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1">
           <button aria-pressed={!type} title="全部武器" onClick={() => pickType("")} className={iconButton(!type)}>全</button>
-          {types.map((option) => <button key={option} aria-pressed={type === option} aria-label={weaponTypeName(option)} title={weaponTypeName(option)}
-            onClick={() => pickType(option)} className={iconButton(type === option)}>{icon(weaponIcons[option], "w-6 h-6")}</button>)}
+          {types.map((option) => { const available = typeAvailable(option); return <button key={option} aria-pressed={type === option} aria-label={weaponTypeName(option)}
+            disabled={!available} title={available ? weaponTypeName(option) : `${weaponTypeName(option)}（${nameOf[monster] ?? monster}沒有這種武器的配裝）`}
+            onClick={() => pickType(option)} className={cx(iconButton(type === option), "disabled:opacity-25 disabled:cursor-not-allowed")}>{icon(weaponIcons[option], "w-6 h-6")}</button>; })}
         </div>
       </div>
       <div className="flex items-center gap-2"><span className={cx(label, "pt-0")}>魔物</span>
@@ -132,7 +136,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
         </div>
       </div> : null}
     </section>
-    <p className="m-0 text-[13px] font-bold text-[#39423a]">{matches.length} 套配裝</p>
+    {/* <p className="m-0 text-[13px] font-bold text-[#39423a]">{matches.length} 套配裝</p> */}
     {choosingMonster ? modal("選擇魔物", () => setChoosingMonster(false), <>
       {monster ? <button onClick={() => pickMonster(monster)} className="mb-2 py-1 px-2.5 border border-[#cfc7b4] rounded-md bg-white text-[12px] text-[#39423a] cursor-pointer">不篩選魔物</button> : null}
       {monsterPicker(monsterKeys, monster, pickMonster)}
