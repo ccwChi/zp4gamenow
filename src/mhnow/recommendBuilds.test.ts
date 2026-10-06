@@ -35,6 +35,17 @@ describe("recommended loadouts", () => {
     expect(mixed.recommendations[0].skills).toEqual({ "攻擊": 9, "集中": 2 });
   });
 
+  it("locks a slot to a chosen piece and grade, with only the holes unlocked at that grade", async () => {
+    const series = fixture();
+    const result = await recommendBuilds(series, stones, { ...options, required: { "攻擊": 7 }, includeDrifts: true, fixed: { helm: { key: "helm", grade: 4 } } });
+    const item = result.recommendations[0];
+    expect(item.build.gear.helm).toBe("helm");
+    expect(item.build.drifts.helm).toEqual([]);
+    expect(item.stoneCount).toBe(2);
+    expect(item.alternatives.helm).toBeUndefined();
+    await expect(recommendBuilds(series, stones, { ...options, fixed: { helm: { key: "nope", grade: 4 } } })).rejects.toThrow("找不到指定的");
+  });
+
   it("rejects unavailable drift-only skills and disabled stones, and respects locked slots", async () => {
     await expect(recommendBuilds(fixture(), stones, { ...options, driftOnly: ["攻擊"] })).rejects.toThrow("開啟允許漂流石");
     await expect(recommendBuilds(fixture(), stones, { ...options, includeDrifts: true, required: { "集中": 1 }, driftOnly: ["集中"] })).rejects.toThrow("沒有「集中」");

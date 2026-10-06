@@ -33,6 +33,8 @@ export type RecommendOptions = {
   bonus?: string[];
   /** 不配裝的技能：帶有這些技能的防具不會出現在結果，漂流石也不會鍊這些技能。 */
   exclude?: string[];
+  /** 指定部位穿哪個系列、在哪個階級：該部位只用這件的技能與（該階級已解鎖的）洞數，不再比較其他系列；沒有洞就不能鍊成。 */
+  fixed?: Partial<Record<Slot, { key: string; grade: number }>>;
   /** 各技能的等級上限；沒給就視為沒有上限。 */
   maxLevels?: Record<string, number>;
   /** 有給就是最大傷害模式：空洞自動鍊成最能提高傷害的技能，排序改成傷害高 → 鍊成少。conditions 是勾選會發動的條件技能。 */
@@ -51,6 +53,11 @@ export function weaponSetup(item: RecommendSeries, weaponType: string, grade: nu
   const stats = item.weaponStats?.[element];
   if (!stats) return undefined;
   return { element, atk: stats.atk[grade - 1] ?? 0, ele: stats.ele?.[grade - 1] ?? 0, crit: stats.crit?.[grade - 1] ?? 0 };
+}
+
+/** 某系列某部位在指定階級已解鎖的洞數。 */
+export function pieceSlots(item: RecommendSeries | undefined, slot: Slot, grade: number) {
+  return (item?.slots?.[slot] ?? []).filter((unlock) => unlock <= grade).length;
 }
 
 /** 某系列某部位在指定階級的技能（不含樣式專屬技能）。 */
@@ -196,11 +203,21 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
   const strictDamage = damageSkills.filter((skill) => !tradable.includes(skill));
   const pools = RECOMMEND_SLOTS.map((slot) => {
     const groups = new Map<string, Choice[]>();
-    for (const item of series) {
-      if (!item.hasArmor || !isRecommendable(item) || (item.unlock ?? 1) > grade || (item.skills[slot] === undefined && item.slots?.[slot] === undefined)) continue;
-      const skills = skillsAt(item.skills[slot] ?? [], grade);
-      if (Object.keys(skills).some((skill) => excluded.has(skill))) continue;
-      const slots = includeDrifts ? (item.slots?.[slot] ?? []).filter((unlock) => unlock <= grade).length : 0;
+    const lock = options.fixed?.[slot];
+    if (lock) {
+      const item = series.find((candidate) => candidate.key === lock.key);
+      if (!item || !item.hasArmor || (item.skills[slot] === undefined && item.slots?.[slot] === undefined)) throw new Error(`找不到指定的${slot}裝備。`);
+      if (!Number.isInteger(lock.grade) || lock.grade < Math.max(1, item.unlock ?? 1) || lock.grade > 10) throw new Error(`指定的${item.name}階級無效。`);
+    }
+    for (const item of lock ? series.filter((candidate) => candidate.key === lock.key) : series) {
+      if (!item.hasArmor || (!lock && (!isRecommendable(item) || (item.unlock ?? 1) > grade)) || (item.skills[slot] === undefined && item.slots?.[slot] === undefined)) continue;
+      const pieceGrade = lock?.grade ?? grade;
+      const skills = skillsAt(item.skills[slot] ?? [], pieceGrade);
+      if (Object.keys(skills).some((skill) => excluded.has(skill))) {
+        if (lock) throw new Error(`指定的${item.name}帶有不配裝的技能。`);
+        continue;
+      }
+      const slots = includeDrifts ? pieceSlots(item, slot, pieceGrade) : 0;
       const vector = [
         ...native.map(([skill, level]) => Math.min(level, skills[skill] ?? 0)),
         ...bonusSkills.map((skill) => Math.min(cap(skill), skills[skill] ?? 0)),

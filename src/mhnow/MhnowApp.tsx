@@ -211,9 +211,9 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
       {visible.map(({ item, skill }) => { const active = Array.isArray(value) ? value.includes(item.key) : value === item.key; return <button key={item.key}
         title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} aria-pressed={Array.isArray(value) ? active : undefined} onClick={() => onPick(item.key)}
         className={cx("min-w-0 p-[5px] border rounded-[7px] flex flex-col items-center justify-center text-[#2e3731] cursor-pointer",
-          small ? "w-10 h-10 p-0.5 overflow-hidden" : display === "name" ? "min-h-[42px]" : "min-h-[50px]",
+          small ? "w-10 h-10 min-[621px]:w-[44px] min-[621px]:h-[44px] p-0.5 overflow-hidden" : display === "name" ? "min-h-[42px]" : "min-h-[50px]",
           active ?"border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f1f2ef]")}>
-        {display === "image" && icons[item.key] ? <span className={cx(small ? "w-8 h-8" : "w-[52px] h-[52px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
+        {display === "image" && icons[item.key] ? <span className={cx(small ? "w-8 h-8 min-[621px]:w-[36px] min-[621px]:h-[36px]" : "w-[52px] h-[52px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
           : <span className={cx("font-bold text-center break-keep", small ? "text-[10px] leading-[1.1]" : "text-[12px] leading-[1.3]")}>{item.name}</span>}
         {display === "name" ? <small className="block max-w-full truncate text-[8px] text-[#777]">{`G${item.unlock} 起`}</small> : null}
         {skill ? <small className="block max-w-full truncate text-[10px] font-bold text-[#e08a00]">{skill.name} {skill.level}</small> : null}
@@ -304,8 +304,8 @@ function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; ico
           setType(option);
           if (currentKey && series.find((item) => item.key === currentKey)?.weaponTypes.includes(option)) onPick(`${currentKey}::${option}`);
         }}
-        className={cx("w-10 h-10 max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-        <span aria-hidden="true" className={cx("block w-7 h-7 max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
+        className={cx("w-[42px] h-[42px] max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+        <span aria-hidden="true" className={cx("block w-[30px] h-[30px] max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
       </button>; })}
     </div>
     {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type))} value={currentType === type ? currentKey : ""} icons={icons} compact

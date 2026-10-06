@@ -50,6 +50,8 @@ for (const series of index.series) {
   else unresolved.push(`${series.key}（${series.name}）${iconId} 下載失敗`);
 }
 
+// 活動武器的圖示不是從 mhnow.me 下載，是手動放進 ICON_DIR 的檔案。
+Object.assign(manifest, { "spring-26": "/mhnow/monsters/rose_assault.webp", "summer-26": "/mhnow/monsters/tropical_cannon.webp" });
 await writeFile(MANIFEST, JSON.stringify(manifest, null, 2), "utf8");
 console.log(`完成 ${Object.keys(manifest).length} 個系列有圖示`);
 if (unresolved.length) console.log(`未取得：\n  ${unresolved.join("\n  ")}`);

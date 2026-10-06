@@ -9,6 +9,8 @@ import { buildCodeMap, costRowFor, decodeRow, gatherKindOf, loadSource, tablesFo
 const INDEX = "public/mhnow/series-index.json";
 const DETAIL_DIR = "public/mhnow/series";
 const MAX_GRADE = 10;
+// 上游資料只叫「春季26／夏季26」；這兩把活動武器有自己的名稱，建議配裝要能當主要武器選。
+const NAME_OVERRIDES = { "spring-26": "薔薇突擊弩", "summer-26": "熱帶加農砲" };
 const LEVELS = ["1", "2", "3", "4", "5"];
 
 const smelt = await import("../data-source/mhn-quest/smelt.mjs");
@@ -170,7 +172,7 @@ for (const [key, config] of Object.entries(data.set)) {
     key,
     id: config.id,
     weaponElements: [...new Set(weaponTypes.map((type) => config.eff?.[type] ?? config.eff?.all ?? "white"))],
-    name: zh["monster-name"][key] ?? key,
+    name: NAME_OVERRIDES[key] ?? zh["monster-name"][key] ?? key,
     unlock: config.unlock ?? 1,
     weaponTypes,
     hasArmor,
