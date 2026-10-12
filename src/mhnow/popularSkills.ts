@@ -1,8 +1,12 @@
 /**
  * 各武器種類的「熱門使用」技能：玩家實際配裝的使用率排行（前 10 名），
  * skills 是固有技能那欄，drifts 是漂流石那欄，都依使用率由高到低排。
- * 資料是手動從站方統計貼過來的快照，不會自動更新。
+ * 主要來源是 popularSkills.json：scripts/build-community-builds.mjs 從社群配裝統計出來的（每天排程更新）。
+ * 下面的 POPULAR 是手動貼的舊快照，只在某種武器的社群配裝太少、統計不出來時備用。
  */
+import { SKILL_EFFECTS } from "./damage";
+import generated from "./popularSkills.json";
+
 type Popular = { skills: string[]; drifts: string[] };
 
 const POPULAR: Record<string, Popular> = {
@@ -64,8 +68,15 @@ const POPULAR: Record<string, Popular> = {
   },
 };
 
-/** 這種武器的熱門技能名單：固有技能的前 10 名，接著是漂流石前 10 名裡沒出現過的；沒有資料的武器回傳空陣列。 */
-export function popularSkills(weaponType: string): string[] {
-  const entry = POPULAR[weaponType];
-  return entry ? [...new Set([...entry.skills, ...entry.drifts])] : [];
+/**
+ * 這種武器的熱門技能名單：固有技能的前 10 名，接著是漂流石前 10 名裡沒出現過的；沒有資料的武器回傳空陣列。
+ * 統計是整個武器種類的，所以傳入武器屬性（fire／ice／blast／white…）時，會先濾掉只對別種屬性有用的技能
+ * （例如爆破屬性的碎龍弓不會列冰屬性攻擊強化）。
+ */
+export function popularSkills(weaponType: string, element?: string): string[] {
+  const entry = (generated as Record<string, Popular>)[weaponType] ?? POPULAR[weaponType];
+  if (!entry) return [];
+  const fits = (name: string) => !element || !SKILL_EFFECTS[name]?.element || SKILL_EFFECTS[name].element === element;
+  const top = (names: string[]) => names.filter(fits).slice(0, 10);
+  return [...new Set([...top(entry.skills), ...top(entry.drifts)])];
 }

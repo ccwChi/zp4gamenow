@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
+  schedule:
+    - cron: "17 20 * * *" # 每天一次（UTC），台灣時間約凌晨 4:17：重抓社群配裝再部署
 
 permissions:
   contents: read
@@ -25,6 +27,11 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
       - run: npm ci
+      # 只有排程／手動觸發才重抓；一般 push 用已 commit 的資料，免得爬蟲壞掉時連程式碼都發佈不了。
+      # 腳本遇到對不上的代碼會直接失敗，這次部署就不會發生，網站維持上一版。
+      - name: Refresh community builds
+        if: github.event_name != 'push'
+        run: npm run data:community
       - name: Build static site
         run: npm run build
         env:

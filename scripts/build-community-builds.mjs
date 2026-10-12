@@ -8,6 +8,7 @@
 // 另外抓站方首頁排行榜的公開端點（幾千套），用上面的代碼表轉成本站格式。
 // 輸出：
 //   public/mhnow/community-builds.json   給「社群配裝」頁用
+//   src/mhnow/popularSkills.json         各武器種類的熱門技能（建議配裝的「熱門使用」）
 //   src/mhnow/mhnowMeCodes.json          本站系列／技能 → mhnow.me 代碼（匯出連結、讀取連結用）
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -60,6 +61,17 @@ const INFERRED_SERIES = {
   "M_4_8": "velk", "M_4_9": "a-somn", "M_5_5": "s-zino", "M_6_1": "puke", "M_6_7": "v-tobi", "M_9_3": "brac",
 };
 
+// 站方沒公開、文字表格也沒出現過的代碼，由人在 mhnow.me 畫面上對過（data-source/mhnow-me-code-todo.md）。
+// 之後站方新增魔物或技能，再對到新的未知代碼時，補在這裡。
+const MANUAL_SERIES = { alloy: "M_10_2", "summer-26": "M_10_7", "spring-26": "M_10_6", guardian: "M_10_8", hope: "M_10_5", leather: "M_10_1" };
+const MANUAL_SKILLS = {
+  "KO術": "S_1_48", "冰耐性": "S_4_17", "精靈加護": "S_4_5", "以牙還牙": "S_1_55", "團體狩獵強化【攻擊】": "S_1_13", "團體狩獵強化【防禦】": "S_4_3",
+  "SP計量表加速【防禦】": "S_3_17", "追擊": "S_1_18", "砲術": "S_1_32", "迴避距離UP": "S_3_6", "SP計量表加速【借力使力】": "S_3_19", "毒屬性強化": "S_2_18",
+  "愈戰愈勇": "S_1_5", "爆破屬性強化": "S_2_21", "耐震": "S_4_12", "軀幹強化": "S_3_5", "完美巧擊": "S_1_22", "怨恨": "S_1_10", "雙重打擊": "S_1_59",
+  "變形強化": "S_1_33", "麻痺屬性強化": "S_2_19", "毅力": "S_4_7", "防禦": "S_4_1", "SP計量表保險": "S_4_10", "睡眠攻擊強化": "S_2_20", "不屈": "S_1_9",
+  "累積狀態異常時威力UP": "S_1_29", "火耐性": "S_4_14",
+};
+
 for (const block of text.slice(start).split(/\n### #/).slice(1)) {
   const head = block.split("\n")[0].match(/^(\d+) (.+?) \/ (.+?) \| score: (\d+) \| ❤️ (\d+) \| 分享 (\d+)/);
   const load = block.match(/\?load=(\S+)/)?.[1];
@@ -82,6 +94,9 @@ for (const block of text.slice(start).split(/\n### #/).slice(1)) {
     holes.forEach((skillCode, hole) => remember(skillCodes, names[hole], skillCode));
   });
 }
+
+for (const [key, code] of Object.entries(MANUAL_SERIES)) remember(seriesCodes, key, code);
+for (const [name, code] of Object.entries(MANUAL_SKILLS)) remember(skillCodes, name, code);
 
 // 第二步：站方首頁排行榜用的公開讀取端點（robots.txt 明講是渲染主內容所需，開放讀取），
 // 一次就有幾千套。只留下每個代碼都認得、而且系列真的有這種武器／防具的。
@@ -117,11 +132,36 @@ for (const entry of rank.data) {
     || keys.slice(1).some((key) => !seriesOf[key].hasArmor)) { skipped++; continue; }
   const gear = { weapon: `${keys[0]}::${type}` }, drifts = {};
   SLOTS.forEach(([, slot], position) => { gear[slot] = keys[position + 1]; drifts[slot] = holes[position]; });
-  builds.push({ likes: entry.likes, unlikes: entry.unlikes, shares: entry.count, type, gear, drifts });
+  builds.push({ likes: entry.likes, unlikes: entry.unlikes, shares: entry.count, time: entry.first_time, type, gear, drifts });
 }
-// 站方的 score 欄位不是按讚數（跟 Top 100 的分數也對不上），這裡改依「讚減倒讚」排。
-builds.sort((a, b) => (b.likes - b.unlikes) - (a.likes - a.unlikes) || b.likes - a.likes || b.shares - a.shares);
+// 站方的 score 欄位不是按讚數（跟 Top 100 的分數也對不上）。預設排序＝按讚數多到少（rank 就是這個名次），
+// 畫面上另外可以切成依 time（首次分享的時間，秒）排的「最新」。
+builds.sort((a, b) => b.likes - a.likes || a.unlikes - b.unlikes || b.shares - a.shares);
 builds.forEach((build, position) => { build.rank = position + 1; });
+
+// 各武器種類的熱門技能：固有技能（武器＋五件防具 G10 的技能）與漂流石技能，各取使用率前 15 名。
+// 使用率＝有這個技能的配裝佔該武器種類配裝的比例；少於 MIN_BUILDS 套的武器種類不算，沿用手動快照。
+// 多留幾個：畫面上會再把不合武器屬性的技能（例如爆破弓的冰屬性強化）濾掉，再取前 10。
+const MIN_BUILDS = 20, TOP = 15;
+const grade10 = (entries = []) => entries.filter((entry) => entry.style === undefined)
+  .filter((entry) => entry.levels.some((level) => level.grade <= 10)).map((entry) => entry.skill);
+const popular = {};
+for (const type of new Set(builds.map((build) => build.type))) {
+  const group = builds.filter((build) => build.type === type);
+  if (group.length < MIN_BUILDS) continue;
+  const own = new Map(), drift = new Map();
+  const bump = (table, names) => { for (const name of new Set(names)) table.set(name, (table.get(name) ?? 0) + 1); };
+  for (const build of group) {
+    const [weaponKey] = build.gear.weapon.split("::");
+    const weapon = seriesOf[weaponKey];
+    bump(own, [...grade10(weapon.weaponSkills?.[type] ?? weapon.skills.weapon),
+      ...SLOTS.flatMap(([, slot]) => grade10(seriesOf[build.gear[slot]].skills[slot]))]);
+    bump(drift, Object.values(build.drifts).flat());
+  }
+  const top = (table) => [...table].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hant")).slice(0, TOP).map(([name]) => name);
+  popular[type] = { builds: group.length, skills: top(own), drifts: top(drift) };
+}
+await writeFile("src/mhnow/popularSkills.json", JSON.stringify(popular, null, 1) + "\n");
 
 await writeFile("public/mhnow/community-builds.json", JSON.stringify({
   source: "https://mhnow.me/", license: "CC BY 4.0（MHNOW.ME）", fetchedAt: new Date().toISOString(),
