@@ -1015,13 +1015,48 @@ function GearDetail({ entries, slotGrades, major, skillLevels, onSkill }: {
   </div>;
 }
 
+/** 裝備庫卡片最窄的寬度；畫面放得下幾張就排幾欄，最多 GEAR_MAX_COLUMNS 欄。 */
+const GEAR_MIN_CARD = 260;
+const GEAR_MAX_COLUMNS = 5;
+const GEARBOX_VIEW_KEY = "mhnow.gearbox.v1";
+
 function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotName, onGrade, onForge, onSkill }: {
   owned: Record<string, string>; forged: Record<string, string[]>; builds: Build[]; seriesBy: Record<string, Series>; ctx: CardContext;
   weaponTypeName: (type: string) => string; slotName: (slot: ArmorSlot) => string;
   onGrade: (id: string, grade: string) => void; onForge: (id: string, skill: string, on: boolean) => void; onSkill: (name: string, level: number) => void;
 }) {
-  const order = ["weapon", ...ARMOR_SLOTS];
   const [adding, setAdding] = useState<string | null>(null);
+  // 排列方式（存在瀏覽器）：武器＝依魔物／依種類；裝備＝依部位／依魔物。
+  const [weaponView, setWeaponView] = useState<"monster" | "type">("monster");
+  const [armorView, setArmorView] = useState<"slot" | "monster">("slot");
+  // 依魔物時：一魔物一行（固定五格，要放得下五張才行）或緊湊排列，由使用者選；放不下五張時只能緊湊。
+  const [armorLayout, setArmorLayout] = useState<"row" | "compact">("row");
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(GEARBOX_VIEW_KEY) ?? "null");
+      if (saved?.weapon === "monster" || saved?.weapon === "type") setWeaponView(saved.weapon);
+      if (saved?.armor === "slot" || saved?.armor === "monster") setArmorView(saved.armor);
+      if (saved?.layout === "row" || saved?.layout === "compact") setArmorLayout(saved.layout);
+    } catch { /* 用預設 */ }
+  }, []);
+  const choose = (next: { weapon?: "monster" | "type"; armor?: "slot" | "monster"; layout?: "row" | "compact" }) => {
+    const weapon = next.weapon ?? weaponView, armor = next.armor ?? armorView, layout = next.layout ?? armorLayout;
+    setWeaponView(weapon); setArmorView(armor); setArmorLayout(layout);
+    try { localStorage.setItem(GEARBOX_VIEW_KEY, JSON.stringify({ weapon, armor, layout })); } catch { /* 只在這次有效 */ }
+  };
+  // 依容器寬度決定一排放幾張卡（最多 5 張）；放不下 5 張時，「依魔物」改成緊湊排列。
+  const wrap = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState(1);
+  useEffect(() => {
+    const element = wrap.current;
+    if (!element) return;
+    const update = () => setColumns(Math.max(1, Math.min(GEAR_MAX_COLUMNS, Math.floor((element.clientWidth + 8) / (GEAR_MIN_CARD + 8)))));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const order = ["weapon", ...ARMOR_SLOTS];
   // 有設定階級、或有練成過漂流石的裝備都列出來。
   const entries = [...new Set([...Object.keys(owned), ...Object.keys(forged)])].flatMap((id) => {
     const current = owned[id] ?? "unforged";
@@ -1035,16 +1070,18 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
     const users = builds.flatMap((build) => itemKeyOf(build, slot) === itemKey ? [{ build, drifts: (build.drifts[slot] ?? []).slice(0, row.slotGrades.length).filter((pick): pick is DriftPick => !!pick) }] : []);
     return [{ id, slot, itemKey, current, row, users, learned: forged[id] ?? [] }];
   }).sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot) || gradeValue(b.current) - gradeValue(a.current) || a.row.title.localeCompare(b.row.title, "zh-Hant"));
-  if (!entries.length) return <p className={NOTE}>還沒有裝備。到「配裝」頁幫裝備輸入「目前階級」，就會出現在這裡；同一件裝備在每組配裝都是同一個階級，漂流石也記在裝備上。</p>;
-  return <div className="flex flex-col gap-4">{order.map((slot) => {
-    const group = entries.filter((entry) => entry.slot === slot);
-    if (!group.length) return null;
-    return <section key={slot} aria-label={slot === "weapon" ? "武器" : slotName(slot as ArmorSlot)}>
-      <h3 className="m-0 mb-2 pb-1 border-b border-[#d9ddd6] fs-lg text-[#39423a]">{slot === "weapon" ? "武器" : slotName(slot as ArmorSlot)} <small className="font-normal text-[#8b938c]">{group.length}</small></h3>
-      <div className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] items-start">{group.map(({ id, current, row, users, learned }) => {
-        const major = Number(current.split("-")[0]);
-        const armor = slot !== "weapon";
-        return <article key={id} className="min-w-0 flex flex-col gap-1.5 p-2 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
+  const seriesOrder = Object.keys(seriesBy);
+  const monsterOf = (entry: (typeof entries)[number]) => entry.row.item!.key;
+  const byMonster = (a: (typeof entries)[number], b: (typeof entries)[number]) => seriesOrder.indexOf(monsterOf(a)) - seriesOrder.indexOf(monsterOf(b));
+  const typeOf = (entry: (typeof entries)[number]) => entry.itemKey.split("::")[1] ?? "";
+  const typeOrder = Object.keys(WEAPON_NAMES);
+  const weapons = entries.filter((entry) => entry.slot === "weapon");
+  const armors = entries.filter((entry) => entry.slot !== "weapon");
+
+  const card = ({ id, slot, current, row, users, learned }: (typeof entries)[number]) => {
+    const major = Number(current.split("-")[0]);
+    const armor = slot !== "weapon";
+    return <article key={id} className="min-w-0 flex flex-col gap-1.5 p-2 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
           <div className="flex items-center gap-2">
             {ctx.icons[row.item!.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item!.key])})` }} /> : null}
             <strong className="flex-1 min-w-0 truncate fs-lg text-[#2b332c]" title={row.title}>{row.title}</strong>
@@ -1075,9 +1112,51 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
             {users.length ? <p className="m-0 fs-md text-[#39423a]">使用中：{users.map(({ build }) => build.name || "未命名").join("、")}</p> : <p className="m-0 fs-md text-[#8b938c]">目前沒有配裝穿著它</p>}
           </div>}
         </article>;
-      })}</div>
-    </section>;
-  })}
+  };
+  const grid = (cells: ReactNode) => <div className="grid gap-2 items-start" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>{cells}</div>;
+  /** 分組用的細分隔：一行小字加一條細線，不佔空間。 */
+  const divider = (label: string, count: number) => <div className="flex items-center gap-2 mb-1.5 fs-sm text-[#8b938c]"><span className="shrink-0">{label} {count}</span><i className="flex-1 border-t border-[#e3e0d4]" /></div>;
+  const heading = (title: string, count: number, control: ReactNode) => <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 pb-1 border-b border-[#d9ddd6]">
+    <h3 className="m-0 fs-lg text-[#39423a]">{title} <small className="font-normal text-[#8b938c]">{count}</small></h3>{control}</div>;
+  const segmented = <T extends string>(label: string, options: [T, string][], value: T, onChange: (next: T) => void) => <div role="group" aria-label={label} className="flex rounded-md bg-[#eef0ed] p-0.5">
+    {options.map(([option, text]) => <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}
+      className={cx("px-2.5 py-0.5 rounded fs-md border-0 cursor-pointer", value === option ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{text}</button>)}</div>;
+
+  // 依魔物：放得下 5 張就一個魔物一行，固定頭／身／手／腰／腳五格（沒有的留虛線空格）；放不下就緊湊排列。
+  const armorByMonster = () => {
+    const sorted = [...armors].sort((a, b) => byMonster(a, b) || order.indexOf(a.slot) - order.indexOf(b.slot));
+    if (columns < GEAR_MAX_COLUMNS || armorLayout === "compact") return grid(sorted.map(card));
+    const monsters = [...new Set(sorted.map(monsterOf))];
+    return <div className="flex flex-col gap-2">{monsters.map((key) => <div key={key} className="grid gap-2 items-stretch" style={{ gridTemplateColumns: `repeat(${GEAR_MAX_COLUMNS}, minmax(0, 1fr))` }}>
+      {ARMOR_SLOTS.map((slot) => { const entry = sorted.find((candidate) => monsterOf(candidate) === key && candidate.slot === slot);
+        return entry ? card(entry) : <div key={slot} aria-label={`${seriesBy[key]?.name ?? key}沒有${slotName(slot)}`} className="min-h-[48px] rounded-xl border border-dashed border-[#d5d0c2]" />; })}
+    </div>)}</div>;
+  };
+
+  return <div ref={wrap} className="flex flex-col gap-5">
+    {!entries.length ? <p className={NOTE}>還沒有裝備。到「配裝」頁幫裝備輸入「目前階級」，就會出現在這裡；同一件裝備在每組配裝都是同一個階級，漂流石也記在裝備上。</p> : null}
+    {weapons.length ? <section aria-label="武器">
+      {heading("武器", weapons.length, segmented("武器排列方式", [["monster", "依魔物"], ["type", "依種類"]] as ["monster" | "type", string][], weaponView, (next) => choose({ weapon: next })))}
+      {weaponView === "monster"
+        ? grid([...weapons].sort((a, b) => byMonster(a, b) || typeOrder.indexOf(typeOf(a)) - typeOrder.indexOf(typeOf(b))).map(card))
+        : <div className="flex flex-col gap-3">{typeOrder.map((type) => { const group = weapons.filter((entry) => typeOf(entry) === type).sort(byMonster);
+          return group.length ? <div key={type}>{divider(weaponTypeName(type), group.length)}{grid(group.map(card))}</div> : null; })}</div>}
+    </section> : null}
+    {armors.length ? <section aria-label="裝備">
+      {heading("裝備", armors.length, <>{segmented("裝備排列方式", [["slot", "依部位"], ["monster", "依魔物"]] as ["slot" | "monster", string][], armorView, (next) => choose({ armor: next }))}
+        {armorView === "monster" ? <>
+          <div role="group" aria-label="依魔物的排法" className="flex rounded-md bg-[#eef0ed] p-0.5">
+            {([["row", "一魔物一行"], ["compact", "緊湊"]] as const).map(([option, text]) => { const blocked = option === "row" && columns < GEAR_MAX_COLUMNS;
+              return <button key={option} aria-pressed={(blocked ? "compact" : armorLayout) === option} disabled={blocked} onClick={() => choose({ layout: option })}
+                title={blocked ? "畫面放不下五張卡，無法一魔物一行" : undefined}
+                className={cx("px-2.5 py-0.5 rounded fs-md border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-45", (blocked ? "compact" : armorLayout) === option ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{text}</button>; })}
+          </div>
+          {columns < GEAR_MAX_COLUMNS ? <small className="fs-sm text-[#8b938c]">畫面放不下五件，只能緊湊排列</small> : null}</> : null}</>)}
+      {armorView === "slot"
+        ? <div className="flex flex-col gap-3">{ARMOR_SLOTS.map((slot) => { const group = armors.filter((entry) => entry.slot === slot);
+          return group.length ? <div key={slot}>{divider(slotName(slot), group.length)}{grid(group.map(card))}</div> : null; })}</div>
+        : armorByMonster()}
+    </section> : null}
     {adding && ctx.driftstones ? (() => {
       const learned = forged[adding] ?? [];
       const title = entries.find((entry) => entry.id === adding)?.row.title ?? "";
@@ -1094,7 +1173,6 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
     })() : null}
   </div>;
 }
-
 
 /** Each weapon type must use its own skills, including overrides. */
 function traitSearchText(traits?: WeaponTraits): string {
@@ -1788,7 +1866,7 @@ export default function MhnowApp() {
       </Modal> : null}
     </section>
 
-    : view === "gearbox" ? <section className="max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
+    : view === "gearbox" ? <section className="max-w-[1400px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
       <PageHeading title="我的裝備庫" hint="配裝畫面如有輸入裝備等級，會自動帶入此區" />
       <GearBox owned={builds.owned ?? {}} forged={builds.forged ?? {}} builds={builds.builds} seriesBy={seriesBy} ctx={cardContext} weaponTypeName={weaponTypeName} slotName={slotName}
         onForge={(id, skill, on) => setBuilds((state) => setForged(state, id, skill, on))} onGrade={(id, grade) => setBuilds((state) => setOwnedGrade(state, id, grade))} onSkill={(name, level) => setSkillTip({ name, level })} />
