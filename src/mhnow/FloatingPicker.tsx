@@ -148,24 +148,24 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
     style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }}>
     {/* 標題列：桌機版可拖曳標題移動，右邊放「記住大小位置」與「重設視窗」；手機版只有標題與關閉。 */}
     <div className="flex items-center gap-2 pr-2 border-b border-[#e5e7e2] shrink-0">
-      {mobile ? <h2 id={titleId} className="flex-1 min-w-0 m-0 p-3 font-bold text-[14px] truncate">{title}</h2>
+      {mobile ? <h2 id={titleId} className="flex-1 min-w-0 m-0 p-3 font-bold fs-lg truncate">{title}</h2>
         : <button id={titleId} onPointerDown={(event) => start(event, "move")} {...handlers}
           onKeyDown={(event) => {
             const offsets: Record<string, [number, number]> = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] };
             const offset = offsets[event.key];
             if (offset) { event.preventDefault(); setBounds(fitBounds({ ...bounds, x: bounds.x + offset[0], y: bounds.y + offset[1] }, window.innerWidth, window.innerHeight)); }
-          }} title="拖曳移動視窗；也可聚焦後使用方向鍵" className="flex-1 min-w-0 p-3 text-left font-bold text-[14px] border-0 bg-transparent cursor-move touch-none select-none truncate">{title}</button>}
+          }} title="拖曳移動視窗；也可聚焦後使用方向鍵" className="flex-1 min-w-0 p-3 text-left font-bold fs-lg border-0 bg-transparent cursor-move touch-none select-none truncate">{title}</button>}
       {!mobile ? <>
         <label title={storageError ? "瀏覽器無法儲存視窗設定" : "下次打開時沿用現在的大小與位置"}
-          className={cx("flex items-center gap-1 shrink-0 text-[12px] cursor-pointer", storageError ? "text-[#b23a30]" : "text-[#5b635c]")}>
+          className={cx("flex items-center gap-1 shrink-0 fs-md cursor-pointer", storageError ? "text-[#b23a30]" : "text-[#5b635c]")}>
           <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />記住大小位置{storageError ? "（無法儲存）" : ""}</label>
-        <button onClick={() => setBounds(defaultBounds())} className="shrink-0 border border-[#cfc7b4] rounded px-2 py-1 bg-white text-[12px] cursor-pointer">重設視窗</button>
+        <button onClick={() => setBounds(defaultBounds())} className="shrink-0 border border-[#cfc7b4] rounded px-2 py-1 bg-white fs-md cursor-pointer">重設視窗</button>
       </> : null}
       {onClearOnClose ? <label title="勾選後，關閉視窗時清掉這裡的選擇與結果；不勾則下次打開還在"
-        className="flex items-center gap-1 shrink-0 text-[12px] text-[#5b635c] cursor-pointer">
+        className="flex items-center gap-1 shrink-0 fs-md text-[#5b635c] cursor-pointer">
         <input type="checkbox" checked={!!clearOnClose} onChange={(event) => onClearOnClose(event.target.checked)} />關閉即清除資料</label> : null}
       {onClear ? <button onClick={onClear} title="清掉這個視窗目前的選擇與結果"
-        className="shrink-0 border-0 rounded px-2 py-1 bg-[#d23c3c] text-white text-[12px] font-bold cursor-pointer hover:bg-[#b23a30]">清除</button> : null}
+        className="shrink-0 border-0 rounded px-2 py-1 bg-[#d23c3c] text-white fs-md font-bold cursor-pointer hover:bg-[#b23a30]">清除</button> : null}
       <button ref={closeButton} autoFocus aria-label="關閉" onClick={onClose} className="w-8 h-8 shrink-0 rounded-full border-0 cursor-pointer">✕</button>
     </div>
     {/* Size container: children lay out against the window's own size (@container / cqh), not the viewport. */}

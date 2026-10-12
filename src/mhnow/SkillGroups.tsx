@@ -26,7 +26,7 @@ export function SkillGroups({ names, renderSkill, empty, searching = false, colu
         <h4 className="m-0 mb-1.5 border-b border-[#d9ddd6]">
           <button type="button" aria-expanded={open} disabled={searching}
             onClick={() => setCollapsed(open ? [...collapsed, group.key] : collapsed.filter((key) => key !== group.key))}
-            className="flex items-center justify-between gap-2 w-full p-0 pb-1 border-0 bg-transparent text-left text-[12px] font-bold text-[#687168] cursor-pointer disabled:cursor-default">
+            className="flex items-center justify-between gap-2 w-full p-0 pb-1 border-0 bg-transparent text-left fs-md font-bold text-[#687168] cursor-pointer disabled:cursor-default">
             <span>{group.label} <small className="font-normal text-[#8b938c]">{group.skills.length}</small></span>
             {searching ? null : <span className="flex items-center gap-1 font-normal text-[#087b84]">{open ? "收合" : "展開"}
               <span aria-hidden="true" className={open ? "inline-block [transform:rotate(180deg)]" : "inline-block"}>▾</span></span>}

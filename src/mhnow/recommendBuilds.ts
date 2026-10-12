@@ -1,5 +1,5 @@
 import type { Build, DriftPick } from "./buildStore";
-import { activeSkills, compileDamage, effectTable, HARMFUL_SKILLS, MIXED_SKILLS, type WeaponSetup } from "./damage";
+import { activeSkills, compileDamage, effectTable, MIXED_SKILLS, type WeaponSetup } from "./damage";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
 
 export const RECOMMEND_SLOTS = ["helm", "mail", "gloves", "belt", "greaves"] as const;
@@ -33,6 +33,8 @@ export type RecommendOptions = {
   bonus?: string[];
   /** 不配裝的技能：帶有這些技能的防具不會出現在結果，漂流石也不會鍊這些技能。 */
   exclude?: string[];
+  /** 不用漂流石鍊的技能：防具本身帶這些技能沒關係，只是演算法不會為了它們花漂流石。使用者自己設成必備／加分／全鍊成的技能不受影響。 */
+  noDrift?: string[];
   /** 指定部位穿哪個系列、在哪個階級：該部位只用這件的技能與（該階級已解鎖的）洞數，不再比較其他系列；沒有洞就不能鍊成。 */
   fixed?: Partial<Record<Slot, { key: string; grade: number }>>;
   /** 各技能的等級上限；沒給就視為沒有上限。 */
@@ -150,6 +152,9 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
     if (options.required[skill] !== undefined || bonusSkills.includes(skill)) throw new Error(`「${skill}」同時設為需要與不配裝，請擇一。`);
     driftPool.delete(skill);
   }
+  for (const skill of options.noDrift ?? []) {
+    if (options.required[skill] === undefined && !bonusSkills.includes(skill) && !driftOnly.has(skill)) driftPool.delete(skill);
+  }
   for (const skill of driftOnly) {
     if (!includeDrifts) throw new Error("已指定技能全靠漂流鍊成，請開啟允許漂流石。");
     if (!driftPool.has(skill)) throw new Error(`目前漂流石資料沒有「${skill}」，無法指定全靠漂流鍊成。`);
@@ -164,7 +169,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
   const table = options.damage ? effectTable(options.damage.skillLevels) : {};
   const damageSkills = setup ? activeSkills(table, setup.element, options.damage!.conditions) : [];
   const caps = Object.fromEntries(damageSkills.map((skill) => [skill, Math.min(cap(skill), table[skill][0].values.length)]));
-  const driftable = damageSkills.filter((skill) => driftPool.has(skill) && !HARMFUL_SKILLS.has(skill));
+  const driftable = damageSkills.filter((skill) => driftPool.has(skill));
   // 傷害計算一律用 damageSkills 順序的陣列（搜尋時要算幾十萬次）。
   const damageAt = setup ? compileDamage(damageSkills, setup, table, caps) : () => 0;
   const levelsOf = (skills: Record<string, number>) => damageSkills.map((skill) => skills[skill] ?? 0);
@@ -222,7 +227,7 @@ export async function recommendBuilds(series: RecommendSeries[], stones: Recomme
         ...native.map(([skill, level]) => Math.min(level, skills[skill] ?? 0)),
         ...bonusSkills.map((skill) => Math.min(cap(skill), skills[skill] ?? 0)),
         // 只會降低傷害的技能越少越好，所以取負值；有加有減的同時放正負值，等級要一樣才比得出勝負。
-        ...strictDamage.flatMap((skill) => HARMFUL_SKILLS.has(skill) ? [-(skills[skill] ?? 0)] : MIXED_SKILLS.has(skill) ? [skills[skill] ?? 0, -(skills[skill] ?? 0)] : [Math.min(caps[skill], skills[skill] ?? 0)]),
+        ...strictDamage.flatMap((skill) => MIXED_SKILLS.has(skill) ? [skills[skill] ?? 0, -(skills[skill] ?? 0)] : [Math.min(caps[skill], skills[skill] ?? 0)]),
       ];
       const trade = tradable.map((skill) => Math.min(caps[skill], skills[skill] ?? 0));
       const id = [...vector, ...trade, slots].join(",");

@@ -66,11 +66,43 @@ describe("maximum damage recommendations", () => {
     expect(recommendations.map((item) => item.damage)).toEqual([...recommendations.map((item) => item.damage)].sort((a, b) => b - a));
   });
 
+  it("keeps chosen skills out of the drift stones without excluding armor, unless the user asked for them", async () => {
+    const withPeek = fixture().map((item) => item.key === "holed-helm" ? { ...item, skills: { helm: [entry("看破", 1)] } } : item);
+    const stones = { colors: [{ key: "white", skills: [{ name: "看破" }] }], common: [], events: [] };
+    const free = await recommendBuilds(withPeek, stones, options);
+    expect(free.recommendations.some((item) => Object.values(item.build.drifts).flat().some((pick) => pick?.skill === "看破"))).toBe(true);
+    const { recommendations } = await recommendBuilds(withPeek, stones, { ...options, noDrift: ["看破"] });
+    for (const item of recommendations) expect(Object.values(item.build.drifts).flat().some((pick) => pick?.skill === "看破")).toBe(false);
+    // 防具本身帶的看破還是可以出現（不是排除）。
+    expect(recommendations.some((item) => item.build.gear.helm === "holed-helm")).toBe(true);
+    // 明確要求的技能不受影響。
+    const wanted = await recommendBuilds(withPeek, stones, { ...options, required: { "看破": 2 }, noDrift: ["看破"] });
+    expect(wanted.recommendations.length).toBeGreaterThan(0);
+  });
+
   it("still requires the chosen skills and rejects weapons without stats", async () => {
     const { recommendations } = await recommendBuilds(fixture(), stones, { ...options, required: { "看破": 2 } });
     for (const item of recommendations) expect(item.skills["看破"]).toBeGreaterThanOrEqual(2);
     const series = fixture();
     delete series[0].weaponStats;
     await expect(recommendBuilds(series, stones, options)).rejects.toThrow("數值");
+  });
+});
+
+describe("chaotic critical", () => {
+  // 武器會心 0%、凶會心 Lv5：會心率 -30%，其中 30% 改打 (1 + 1.5) 倍，其餘 0.75 倍。
+  it("weights negative crits by how often they trigger", () => {
+    const negative = 0.3 * 2.5 + 0.7 * 0.75;
+    expect(damage({ "凶會心": 5 })).toBeCloseTo(1000 * (0.7 + 0.3 * negative));
+    expect(damage({ "凶會心": 5 })).toBeGreaterThan(damage({}));
+  });
+
+  it("is only a penalty when other skills keep the net affinity from going negative", () => {
+    expect(damage({ "凶會心": 5, "看破": 5 })).toBeCloseTo(1000 * (0.1 * 1.25 + 0.9));
+    expect(damage({ "凶會心": 5, "看破": 5 })).toBeLessThan(damage({ "看破": 5 }));
+  });
+
+  it("is less valuable at lower levels", () => {
+    expect(damage({ "凶會心": 1 })).toBeCloseTo(1000 * (0.9 + 0.1 * (0.3 * 1.5 + 0.7 * 0.75)));
   });
 });

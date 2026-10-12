@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { assetPath, dataPath } from "./assetPath";
 import type { Build, DriftPick } from "./buildStore";
-import { toMhnowMeLink } from "./mhnowMe";
 import { SkillGroups } from "./SkillGroups";
-import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 
 type Entry = {
-  rank: number; likes: number; unlikes: number; shares: number; type: string;
+  /** rank：按讚數排行的名次。time：首次分享的時間（秒），舊資料沒有。 */
+  rank: number; likes: number; unlikes: number; shares: number; time?: number; type: string;
   gear: Record<string, string>; drifts: Record<string, string[]>;
 };
 /** rankTotal：站方排行榜總套數（收錄的是其中代碼都對得到的）。 */
@@ -27,14 +26,16 @@ export function communityToBuild(entry: Entry): Build {
 
 /**
  * 社群配裝：mhnow.me 玩家分享的配裝，依「讚減倒讚」排序（CC BY 4.0），可依武器種類與魔物（圖示）篩選，一鍵加進自己的配裝，
- * 或到原站用模擬器打開。資料由 scripts/build-community-builds.mjs 產生。
+ * 資料由 scripts/build-community-builds.mjs 產生。
  */
-export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, slotName, onAdd, onSkill, skillsOf, full, modal }: {
+export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, renderCard, onAdd, skillsOf, full, modal }: {
   series: { key: string; name: string }[]; icons: Record<string, string>;
   /** 武器種類 → 圖示（跟配裝頁同一套）。 */
   weaponIcons: Record<string, string>;
-  weaponTypeName: (type: string) => string; slotName: (slot: typeof SLOTS[number]) => string;
-  onAdd: (build: Build) => void; onSkill: (name: string, level: number) => void; full: boolean;
+  weaponTypeName: (type: string) => string;
+  /** 畫一組配裝（跟「配裝」頁同一個卡片樣式，唯讀）：header 放標題列、footer 放底下的按鈕。 */
+  renderCard: (build: Build, header: ReactNode, footer: ReactNode) => ReactNode;
+  onAdd: (build: Build) => void; full: boolean;
   /** 整套的技能等級（固有技能＋漂流石），由主程式用跟配裝頁同一套算法算。 */
   skillsOf: (build: Build) => Record<string, number>;
   /** 主程式的彈出視窗（魔物很多，平常收成一顆按鈕，點了才在視窗裡選）。 */
@@ -49,6 +50,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   const [choosingMonster, setChoosingMonster] = useState(false);
   const [chosenSkills, setChosenSkills] = useState<string[]>([]);
   const [added, setAdded] = useState<number[]>([]);
+  const [sort, setSort] = useState<"likes" | "new">("likes");
   const [limit, setLimit] = useState(PAGE_SIZE);
   useEffect(() => {
     fetch(dataPath("/mhnow/community-builds.json")).then((response) => response.json()).then(setData, () => setFailed(true));
@@ -81,7 +83,9 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   const withWeapons = new Set(builds.map(weaponMonster));
   const monsterKeys = series.map((item) => item.key).filter((key) => withWeapons.has(key));
   const types = Object.keys(weaponIcons).filter((option) => builds.some((entry) => entry.type === option));
-  const shown = matches.slice(0, limit);
+  // 資料本來就是按讚數排好的；「最新」改依首次分享時間，新的在前，同時間維持按讚順序。
+  const sorted = sort === "new" ? [...matches].sort((a, b) => (b.time ?? 0) - (a.time ?? 0)) : matches;
+  const shown = sorted.slice(0, limit);
   // 先選武器或先選魔物都可以：選了一邊，另一邊沒有對應配裝資料的選項會停用，所以不會選成 0 套。
   const typeAvailable = (option: string) => !monster || builds.some((entry) => entry.type === option && weaponMonster(entry) === monster);
   const monsterAvailable = (key: string) => !type || builds.some((entry) => entry.type === type && weaponMonster(entry) === key);
@@ -89,15 +93,15 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
   const pickMonster = (key: string) => { setMonster(monster === key ? "" : key); setLimit(PAGE_SIZE); setChoosingMonster(false); };
   const toggleSkill = (name: string) => { setChosenSkills(activeSkills.includes(name) ? activeSkills.filter((item) => item !== name) : [...activeSkills, name]); setLimit(PAGE_SIZE); };
   const icon = (src: string | undefined, size: string) => src ? <span aria-hidden="true" className={cx(size, "flex-none bg-contain bg-center bg-no-repeat")} style={{ backgroundImage: `url(${assetPath(src)})` }} /> : null;
-  const iconButton = (on: boolean) => cx("w-9 h-9 flex items-center justify-center rounded border cursor-pointer text-[12px] font-bold",
+  const iconButton = (on: boolean) => cx("w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center rounded border cursor-pointer fs-md font-bold",
     on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white");
-  const label = "flex-none w-9 pt-2 text-[12px] text-[#8b938c]";
-  const link = "border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline";
+  const label = "flex-none w-9 pt-2 fs-md text-[#8b938c]";
+  const link = "border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer hover:underline";
 
-  if (failed) return <p role="alert" className="text-[13px] text-[#b23a30]">社群配裝載入失敗，請重新整理。</p>;
-  if (!data) return <p className="text-[13px] text-[#858d86]">載入中……</p>;
+  if (failed) return <p role="alert" className="fs-md text-[#b23a30]">社群配裝載入失敗，請重新整理。</p>;
+  if (!data) return <p className="fs-md text-[#858d86]">載入中……</p>;
   return <div className="flex flex-col gap-3">
-    {/* <p className="m-0 text-[12px] text-[#858d86] leading-[1.7]">
+    {/* <p className="m-0 fs-md text-[#858d86] leading-[1.7]">
       資料來自 <a href={data.source} target="_blank" rel="noreferrer" className="text-[#087b84]">MHNOW.ME</a> 玩家社群的人氣配裝（{data.license}），
       快照時間 {data.fetchedAt.slice(0, 10)}，
       {data.rankTotal && data.rankTotal > data.builds.length
@@ -111,27 +115,27 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
           <button aria-pressed={!type} title="全部武器" onClick={() => pickType("")} className={iconButton(!type)}>全</button>
           {types.map((option) => { const available = typeAvailable(option); return <button key={option} aria-pressed={type === option} aria-label={weaponTypeName(option)}
             disabled={!available} title={available ? weaponTypeName(option) : `${weaponTypeName(option)}（${nameOf[monster] ?? monster}沒有這種武器的配裝）`}
-            onClick={() => pickType(option)} className={cx(iconButton(type === option), "disabled:opacity-25 disabled:cursor-not-allowed")}>{icon(weaponIcons[option], "w-6 h-6")}</button>; })}
+            onClick={() => pickType(option)} className={cx(iconButton(type === option), "disabled:opacity-25 disabled:cursor-not-allowed")}>{icon(weaponIcons[option], "w-[var(--ic)] h-[var(--ic)]")}</button>; })}
         </div>
       </div>
       {/* 魔物很多，平常只放一顆按鈕；點了在視窗裡選（沒有對應武器資料的魔物一樣停用）。 */}
       <div className="flex items-center gap-2"><span className={cx(label, "pt-0")}>魔物</span>
-        <span className={cx("inline-flex items-center rounded-lg border text-[13px]", monster ? "border-[#099aa5] bg-[#eef8f7]" : "border-[#d8d0bd] bg-white")}>
+        <span className={cx("inline-flex items-center rounded-lg border fs-md", monster ? "border-[#099aa5] bg-[#eef8f7]" : "border-[#d8d0bd] bg-white")}>
           <button onClick={() => setChoosingMonster(true)} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-2 border-0 bg-transparent text-[#2b332c] cursor-pointer">
-            {monster ? icon(icons[monster], "w-6 h-6") : null}<b>{monster ? nameOf[monster] ?? monster : "全部"}</b><span aria-hidden="true" className="text-[11px] text-[#8b938c]">▾</span>
+            {monster ? icon(icons[monster], "w-[var(--ic)] h-[var(--ic)]") : null}<b>{monster ? nameOf[monster] ?? monster : "全部"}</b><span aria-hidden="true" className="fs-sm text-[#8b938c]">▾</span>
           </button>
           {monster ? <button aria-label="清除魔物篩選" onClick={() => pickMonster(monster)} className="py-1 pr-2.5 pl-1 border-0 bg-transparent text-[#8b938c] cursor-pointer hover:text-[#2b332c]">✕</button> : null}
         </span>
       </div>
       {skillNames.length ? <div className="flex gap-2"><span className={label}>技能</span>
         <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between gap-2 pt-1.5 text-[12px] text-[#8b938c]">
+          <div className="flex items-center justify-between gap-2 pt-1.5 fs-md text-[#8b938c]">
             <span>{activeSkills.length ? `已選 ${activeSkills.length} 個，列出有其中任一個技能的配裝` : "點技能篩選配裝"}</span>
             {activeSkills.length ? <button onClick={() => setChosenSkills([])} className={link}>清除</button> : null}
           </div>
           <div className="max-h-[260px] overflow-auto">
             <SkillGroups names={skillNames} popular={popularSkills} columns="wrap" renderSkill={(name) => { const on = activeSkills.includes(name); return <button key={name} aria-pressed={on} onClick={() => toggleSkill(name)}
-              className={cx("py-0.5 px-2 rounded-md border text-[12px] cursor-pointer", on ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#d8d0bd] text-[#39423a] hover:border-[#9aa39b]")}>
+              className={cx("py-0.5 px-2 rounded-md border fs-md cursor-pointer", on ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#d8d0bd] text-[#39423a] hover:border-[#9aa39b]")}>
                 {name}<small className={cx("ml-1 tabular-nums", on ? "text-white/80" : "text-[#8b938c]")}>{percent(name)}</small></button>; }} />
           </div>
         </div>
@@ -140,50 +144,38 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, sl
     {choosingMonster ? modal("選擇魔物", () => setChoosingMonster(false),
       <div role="group" aria-label="魔物" className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
         <button aria-pressed={!monster} onClick={() => pickMonster("")}
-          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border text-[11px] cursor-pointer", !monster ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5]")}>
-          <span className="w-9 h-9 flex items-center justify-center text-[15px] font-bold">全</span>全部</button>
+          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border fs-sm cursor-pointer", !monster ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5]")}>
+          <span className="w-9 h-9 flex items-center justify-center fs-lg font-bold">全</span>全部</button>
         {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = nameOf[key] ?? key; return <button key={key} aria-pressed={monster === key}
           disabled={!available} title={available ? name : `${name}（沒有${weaponTypeName(type)}的配裝）`} onClick={() => pickMonster(key)}
-          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border text-[11px] leading-tight text-center cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed",
+          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border fs-sm leading-tight text-center cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed",
             monster === key ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5] enabled:hover:border-[#c5cdc6]")}>
-          {icon(icons[key], "w-9 h-9")}<span className="max-w-full truncate">{name}</span></button>; })}
+          {icon(icons[key], "w-[var(--ic)] h-[var(--ic)]")}<span className="max-w-full truncate">{name}</span></button>; })}
       </div>) : null}
-    {/* <p className="m-0 text-[13px] font-bold text-[#39423a]">{matches.length} 套配裝</p> */}
-    {!shown.length ? <p className="text-[13px] text-[#858d86]">沒有符合的配裝。</p> : null}
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="fs-md font-bold text-[#39423a]">排序</span>
+      <div role="group" aria-label="排序方式" className="flex rounded-md bg-[#eef0ed] p-0.5">
+        {([["likes", "最多人點讚"], ["new", "最新"]] as const).map(([value, label]) => <button key={value} aria-pressed={sort === value} onClick={() => { setSort(value); setLimit(PAGE_SIZE); }}
+          className={cx("px-3 py-1 rounded fs-md border-0 cursor-pointer", sort === value ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{label}</button>)}
+      </div>
+      <span className="fs-md text-[#858d86]">{matches.length} 套</span>
+    </div>
+    {!shown.length ? <p className="fs-md text-[#858d86]">沒有符合的配裝。</p> : null}
     <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] items-start">
       {shown.map((entry) => {
-        const [weaponKey, weaponType] = entry.gear.weapon.split("::");
-        const weaponIcons = iconsForWeapon(icons, weaponType);
+        const weaponType = entry.gear.weapon.split("::")[1];
         const isAdded = added.includes(entry.rank);
-        const build = communityToBuild(entry);
-        const skills = Object.entries(skillsOfEntry(entry)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hant"));
-        const link = toMhnowMeLink(build);
-        return <article key={entry.rank} className="min-w-0 flex flex-col gap-1.5 p-2.5 rounded-xl bg-[#ece8dc] border border-[#d8d0bd]">
-          <header className="flex items-baseline justify-between gap-2">
-            <strong className="text-[15px] text-[#2b332c]">#{entry.rank} {weaponTypeName(weaponType)}</strong>
-            <span className="text-[12px] text-[#687168] tabular-nums">❤ {entry.likes}　分享 {entry.shares}</span>
-          </header>
-          <div className="flex flex-col gap-1 p-2 rounded-[10px] bg-[#fffaf0] border border-[#e3dac6]">
-            {[["weapon", `${weaponTypeName(weaponType)}・${weaponSeriesName(weaponKey, weaponType, nameOf[weaponKey] ?? weaponKey)}`, weaponKey, ""] as const,
-              ...SLOTS.map((slot) => [slot, nameOf[entry.gear[slot]] ?? entry.gear[slot], entry.gear[slot], slotName(slot)] as const)].map(([slot, title, key, label]) =>
-              <div key={slot} className="flex items-center gap-2 text-[13px] min-[621px]:text-[15px] text-[#2b332c]">
-                {weaponIcons[key] ?? icons[key] ? <span className="w-7 h-7 flex-none bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${assetPath(weaponIcons[key] ?? icons[key])})` }} /> : <span className="w-7 flex-none" />}
-                <span className="min-w-0 flex-1 truncate">{label ? <small className="mr-1.5 text-[#858d86]">{label}</small> : null}{title}</span>
-                {slot !== "weapon" ? <span className="flex-none text-[12px] min-[621px]:text-[14px] text-[#087b84]">{(entry.drifts[slot] ?? []).join("、")}</span> : null}
-              </div>)}
-          </div>
-          <div className="flex flex-wrap gap-1">{skills.map(([name, level]) => <button key={name} onClick={() => onSkill(name, level)}
-            className={cx("py-0.5 px-2 border rounded-md text-[12px] min-[621px]:text-[14px] cursor-pointer", activeSkills.includes(name) ? "border-[#099aa5] bg-[#eef8f7] text-[#087b84] font-bold" : "border-[#d8d0bd] bg-white text-[#39423a]")}>{name} <b className="text-[#e08a00]">{level}</b></button>)}</div>
-          <div className="flex gap-1.5">
-            <button disabled={full || isAdded} onClick={() => { onAdd(build); setAdded([...added, entry.rank]); }}
-              className="flex-1 py-1.5 border-0 rounded-lg bg-[#28352e] text-white text-[13px] cursor-pointer disabled:opacity-40 disabled:cursor-default">{isAdded ? "✓ 已加入" : full ? "配裝已達上限" : "加入我的配裝"}</button>
-            {"url" in link ? <a href={link.url} target="_blank" rel="noreferrer"
-              className="py-1.5 px-3 border border-[#cfc7b4] rounded-lg bg-white text-[#39423a] text-[13px] no-underline">在 mhnow.me 開啟</a> : null}
-          </div>
-        </article>;
+        const build = { ...communityToBuild(entry), id: `community-${entry.rank}` };
+        return <Fragment key={entry.rank}>{renderCard(build,
+          <header className="flex items-baseline justify-between gap-2 px-1 pt-0.5">
+            <strong className="fs-lg text-[#2b332c]">#{entry.rank} {weaponTypeName(weaponType)}</strong>
+            <span className="fs-md text-[#687168] tabular-nums">{entry.time ? `${new Date(entry.time * 1000).toLocaleDateString("zh-TW")}　` : ""}❤ {entry.likes}　分享 {entry.shares}</span>
+          </header>,
+          <button disabled={full || isAdded} onClick={() => { onAdd(build); setAdded([...added, entry.rank]); }}
+            className="py-2 border-0 rounded-lg bg-[#28352e] text-white fs-md cursor-pointer disabled:opacity-40 disabled:cursor-default">{isAdded ? "✓ 已加入" : full ? "配裝已達上限" : "加入我的配裝"}</button>)}</Fragment>;
       })}
     </div>
-    {matches.length > shown.length ? <button onClick={() => setLimit(limit + PAGE_SIZE)} className="self-center py-2 px-6 border border-[#cfc7b4] rounded-full bg-white text-[13px] text-[#39423a] cursor-pointer">
-      再顯示 {Math.min(PAGE_SIZE, matches.length - shown.length)} 套（還有 {matches.length - shown.length} 套）</button> : null}
+    {sorted.length > shown.length ? <button onClick={() => setLimit(limit + PAGE_SIZE)} className="self-center py-2 px-6 border border-[#cfc7b4] rounded-full bg-white fs-md text-[#39423a] cursor-pointer">
+      再顯示 {Math.min(PAGE_SIZE, sorted.length - shown.length)} 套（還有 {sorted.length - shown.length} 套）</button> : null}
   </div>;
 }

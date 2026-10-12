@@ -14,9 +14,9 @@ import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, 
 import { DEFAULT_MATERIAL_DISCOUNT, MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, serializeMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
 
 import qrcode from "qrcode-generator";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { SHARE_PARAM, decodeBuildShare, encodeBuildShare, shareUrl } from "./buildShare";
-import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, pieceOf, removeBuild, saveBuilds, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
+import { MAX_BUILDS, addBuild, appendBuilds, defaultStats, exportFile, parseImport, initialBuildState, loadBuilds, loadStats, saveStats, driftProgress, gearId, gradeValue, itemKeyOf, pieceOf, removeBuild, saveBuilds, setForged, setOwnedGrade, setPiece, updateBuild, type Build, type BuildState, type DriftPick, type StatsSettings } from "./buildStore";
 
 /** 資料由 scripts/build-mhnow-data.mjs 產生，原生繁體中文，不需要任何翻譯層。 */
 /** 武器種類專屬特性，轉檔時已翻成中文；後座力、裝填是文字（小／中／大…、快／普通…）。 */
@@ -92,17 +92,17 @@ const BAR_SEGMENTS = 5;
 const cx = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(" ");
 /** 背景圖示（魔物紋章、部位／武器 svg）共用的背景設定。 */
 const BG_ICON = "bg-contain bg-center bg-no-repeat";
-const NOTE = "text-[12px] text-[#858d86] leading-[1.7]";
+const NOTE = "fs-md text-[#858d86] leading-[1.7]";
 /** 裝備列名稱下的小字行（技能、漂流石、武器特性），顏色各自加。 */
-const GEAR_SMALL = "flex flex-wrap gap-x-2.5 gap-y-0.5 text-[12px] min-[621px]:text-[15px]";
+const GEAR_SMALL = "flex flex-wrap gap-x-2.5 gap-y-0.5 fs-md";
 /** 不滿版：整頁收成一欄固定寬度置中（仿 mhnow.me）；內容寬 360px（一組裝備的寬度），左右各留 16px（手機 8px）。 */
 const PAGE = "max-w-[392px] mx-auto my-4 px-4 pt-0 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7";
 
 /** 各頁標題：英文眉標＋標題。說明文字在 360px 寬放不下，保留在 DOM 但不顯示。 */
-function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description?: string }) {
+function PageHeading({ eyebrow, title, description, hint }: { eyebrow?: string; title: string; description?: string; hint?: string }) {
   return <div className="flex justify-between items-center mb-2.5"><div>
-    <span className="text-[10px] tracking-[1.5px] text-[#89918a]">{eyebrow}</span>
-    <h1 className="text-[19px] mt-0.5 mb-0">{title}</h1>
+    {eyebrow ? <span className="fs-sm tracking-[1.5px] text-[#89918a]">{eyebrow}</span> : null}
+    <h1 className="fs-xl mt-0.5 mb-0">{title}{hint ? <small className="ml-2 fs-sm font-normal text-[#858d86]">{hint}</small> : null}</h1>
     {description ? <p className="hidden">{description}</p> : null}
   </div></div>;
 }
@@ -121,10 +121,18 @@ export function driftColor(pick: DriftPick, data: Driftstones | null): string {
     ?? (data?.common.includes(pick.skill) ? "common" : "event");
 }
 
-/** 小六角形（漂流石）；白色在米色底上看不清楚，所以都描一圈邊。 */
+/** 共通漂流石（每種顏色都能出）用彩虹色，一看就知道不是某一色專屬的。 */
+const RAINBOW = ["#e0564a", "#e0b400", "#5cb85c", "#4bb8c9", "#3b82c4", "#8b5fc7"];
+const RAINBOW_CSS = `conic-gradient(${[...RAINBOW, RAINBOW[0]].join(",")})`;
+
+/** 小六角形（漂流石）；白色在米色底上看不清楚，所以都描一圈邊。共通是彩虹色，其他依各自的漂流石顏色。 */
 function DriftHex({ color, size }: { color: string; size: number }) {
+  const gradient = useId();
+  const rainbow = color === "common";
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="inline-block flex-none align-[-1px]">
-    <path d="M12 1.5 21.5 7v10L12 22.5 2.5 17V7z" fill={DRIFT_DOT[color] ?? DRIFT_DOT.common} stroke="rgba(0,0,0,.28)" strokeWidth="1.5" strokeLinejoin="round" />
+    {rainbow ? <defs><linearGradient id={gradient} x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+      {RAINBOW.map((stop, position) => <stop key={stop} offset={position / (RAINBOW.length - 1)} stopColor={stop} />)}</linearGradient></defs> : null}
+    <path d="M12 1.5 21.5 7v10L12 22.5 2.5 17V7z" fill={rainbow ? `url(#${gradient})` : DRIFT_DOT[color] ?? DRIFT_DOT.common} stroke="rgba(0,0,0,.28)" strokeWidth="1.5" strokeLinejoin="round" />
   </svg>;
 }
 
@@ -196,30 +204,30 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
   series: Series[]; value: string | string[]; onPick: (key: string) => void; icons: Record<string, string>;
   display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string; placeholder?: string; compact?: boolean;
 }) {
-  const small = compact && display === "image";
+  const small = display === "image";
   const ranks = new Map(series.map((item, position) => [item.key, position]));
   const visible = searchSeries(series, query, slot).sort((a, b) => ranks.get(a.item.key)! - ranks.get(b.item.key)!);
   const modeButton = (mode: "image" | "name", label: string) => <button
     className={cx("border-0 py-[5px] px-3 rounded-[5px]", display === mode ? "bg-white text-[#253229] shadow-[0_1px_4px_#ccd1ca]" : "bg-transparent text-[#687168]")}
     onClick={() => onDisplay(mode)}>{label}</button>;
   return <div>
-    <div className="flex items-center justify-between mb-[9px] text-[12px] text-[#687168] max-[620px]:flex-wrap max-[620px]:gap-2">
+    <div className="flex items-center justify-between mb-[9px] fs-md text-[#687168] max-[620px]:flex-wrap max-[620px]:gap-2">
       <span>① 選擇魔物（{visible.length}）</span>
       <input aria-label="搜尋" value={query} onChange={(event) => onQuery(event.target.value)} placeholder={placeholder ?? (slot ? "搜尋魔物、裝備或技能" : "搜尋魔物或裝備")}
-        className="flex-1 min-w-0 mx-3 my-0 py-2 px-[11px] border border-[#dfe2dc] rounded-[7px] bg-[#f8f8f5] text-[13px] outline-none max-[620px]:order-3 max-[620px]:basis-full max-[620px]:m-0" />
+        className="flex-1 min-w-0 mx-3 my-0 py-2 px-[11px] border border-[#dfe2dc] rounded-[7px] bg-[#f8f8f5] fs-md outline-none max-[620px]:order-3 max-[620px]:basis-full max-[620px]:m-0" />
       <div className="flex bg-[#eef0ed] rounded-md p-0.5">{modeButton("image", "圖片")}{modeButton("name", "名稱")}</div>
     </div>
-    {visible.length ? <div className={small ? "flex flex-wrap gap-1 max-h-[220px] overflow-auto content-start" : cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
-      display === "image" ? "grid-cols-[repeat(auto-fill,minmax(82px,1fr))] max-[760px]:grid-cols-[repeat(auto-fill,minmax(72px,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]")}>
+    {visible.length ? <div className={small ? cx("flex flex-wrap gap-1 overflow-auto content-start", compact ? "max-h-[220px]" : "max-h-[290px] max-[760px]:max-h-[250px]") : cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
+      "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]")}>
       {visible.map(({ item, skill }) => { const active = Array.isArray(value) ? value.includes(item.key) : value === item.key; return <button key={item.key}
         title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} aria-pressed={Array.isArray(value) ? active : undefined} onClick={() => onPick(item.key)}
         className={cx("min-w-0 p-[5px] border rounded-[7px] flex flex-col items-center justify-center text-[#2e3731] cursor-pointer",
-          small ? "w-10 h-10 min-[621px]:w-[44px] min-[621px]:h-[44px] p-0.5 overflow-hidden" : display === "name" ? "min-h-[42px]" : "min-h-[50px]",
+          small ? (icons[item.key] ? "min-w-[var(--ic-btn)] min-h-[var(--ic-btn)] p-0.5" : "min-h-[var(--ic-btn)] px-2") : "min-h-[42px]",
           active ?"border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f1f2ef]")}>
-        {display === "image" && icons[item.key] ? <span className={cx(small ? "w-8 h-8 min-[621px]:w-[36px] min-[621px]:h-[36px]" : "w-[52px] h-[52px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
-          : <span className={cx("font-bold text-center break-keep", small ? "text-[10px] leading-[1.1]" : "text-[12px] leading-[1.3]")}>{item.name}</span>}
-        {display === "name" ? <small className="block max-w-full truncate text-[8px] text-[#777]">{`G${item.unlock} 起`}</small> : null}
-        {skill ? <small className="block max-w-full truncate text-[10px] font-bold text-[#e08a00]">{skill.name} {skill.level}</small> : null}
+        {display === "image" && icons[item.key] ? <span className={cx("w-[var(--ic)] h-[var(--ic)] flex-none", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[item.key])})` }} />
+          : <span className={cx("font-bold text-center break-keep", small ? "fs-sm leading-[1.1]" : "fs-md leading-[1.3]")}>{item.name}</span>}
+        {display === "name" ? <small className="block max-w-full truncate fs-sm text-[#777]">{`G${item.unlock} 起`}</small> : null}
+        {skill ? <small className="block max-w-full truncate fs-sm font-bold text-[#e08a00]">{skill.name} {skill.level}</small> : null}
       </button>; })}
     </div> : <p className={NOTE}>找不到符合的魔物。</p>}
   </div>;
@@ -248,27 +256,6 @@ async function copyText(text: string) {
 }
 
 /** narrow：技能說明、漂流石這類內容少的視窗用窄版。 */
-/** 懸浮的字體縮放工具：可拖曳到任何位置，蓋在 Modal 之上，所以放大後點不到的視窗也能再調整。位置存 localStorage。 */
-function ZoomControl({ zoom, onChange }: { zoom: number; onChange: (next: number) => void }) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ dx: number; dy: number } | null>(null);
-  useEffect(() => {
-    try { const saved = JSON.parse(localStorage.getItem("mhnow-zoom-pos") ?? "null"); if (saved && typeof saved.x === "number" && typeof saved.y === "number") setPos(saved); } catch { /* 用預設位置 */ }
-  }, []);
-  const place = pos ?? { x: 16, y: 56 };
-  const btn = "w-8 h-8 border border-[#cfc7b4] rounded-md bg-white text-[13px] text-[#39423a] cursor-pointer disabled:opacity-40";
-  return <div style={{ left: Math.max(0, Math.min(place.x, (typeof window === "undefined" ? 9999 : window.innerWidth) - 150)), top: Math.max(0, place.y) }}
-    className="max-[620px]:hidden fixed z-[70] flex items-center gap-1 p-1 rounded-lg bg-[#fafaf7]/95 border border-[#cfc7b4] shadow-[0_4px_16px_rgba(0,0,0,.2)]">
-    <span title="拖曳移動" aria-label="拖曳移動字體工具" className="w-5 h-8 grid place-items-center text-[#8b938c] cursor-grab active:cursor-grabbing touch-none select-none"
-      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.parentElement!.getBoundingClientRect(); drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top }; }}
-      onPointerMove={(event) => { if (drag.current) setPos({ x: event.clientX - drag.current.dx, y: event.clientY - drag.current.dy }); }}
-      onPointerUp={() => { drag.current = null; if (pos) try { localStorage.setItem("mhnow-zoom-pos", JSON.stringify(pos)); } catch { /* 只在這次有效 */ } }}>⠿</span>
-    <button aria-label="縮小字體" disabled={zoom <= 80} onClick={() => onChange(zoom - 10)} className={btn}>A-</button>
-    <button aria-label="恢復字體大小" title="恢復 100%" onClick={() => onChange(100)} className={cx(btn, "w-auto min-w-[46px] px-1 tabular-nums")}>{zoom}%</button>
-    <button aria-label="放大字體" disabled={zoom >= 200} onClick={() => onChange(zoom + 10)} className={btn}>A+</button>
-  </div>;
-}
-
 function Modal({ title, onClose, children, narrow, sheet }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean; sheet?: boolean }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -277,10 +264,10 @@ function Modal({ title, onClose, children, narrow, sheet }: { title: string; onC
   }, [onClose]);
   // sheet：手機版從畫面底部滑出（drawer），桌機版維持置中視窗。
   return <div className={cx("fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 z-50", sheet ? "max-[620px]:items-end max-[620px]:p-0" : "max-[620px]:p-2")} onClick={onClose}>
-    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] min-[621px]:[zoom:var(--z,1)] min-[621px]:max-h-[calc(86vh/var(--z,1))] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]")} onClick={(event) => event.stopPropagation()}>
+    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]")} onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3 border-b border-[#e5e7e2] flex-none">
-        <strong className="text-[15px]">{title}</strong>
-        <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 text-[14px] leading-none cursor-pointer text-[#4b5d50]">✕</button>
+        <strong className="fs-lg">{title}</strong>
+        <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 fs-lg leading-none cursor-pointer text-[#4b5d50]">✕</button>
       </div>
       <div className="overflow-auto py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3">{children}</div>
     </div>
@@ -293,22 +280,22 @@ function ChoiceGrid({ label, items, value, onPick, iconOnly }: {
   value: string; onPick: (id: string) => void; iconOnly?: boolean;
 }) {
   return <div className="mb-4">
-    <span className="block text-[12px] text-[#687168] mb-[9px]">{label}（{items.length}）</span>
-    <div className={cx("grid", iconOnly ? "grid-cols-[repeat(auto-fill,minmax(62px,1fr))] gap-1.5" : "grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2 max-[620px]:grid-cols-[1fr]")}>
+    <span className="block fs-md text-[#687168] mb-[9px]">{label}（{items.length}）</span>
+    <div className={cx(iconOnly ? "flex flex-wrap gap-1" : "grid", !iconOnly && "grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2 max-[620px]:grid-cols-[1fr]")}>
       {items.map((item) => {
         const active = value === item.id;
         return <button key={item.id} title={item.title} aria-label={item.title} disabled={item.disabled} onClick={() => onPick(item.id)}
           className={cx("relative min-w-0 flex items-center gap-2.5 border rounded-[9px] text-[#2e3731] cursor-pointer disabled:opacity-[.28] disabled:cursor-not-allowed",
-            iconOnly ? "min-h-[62px] py-2 px-1 flex-col justify-center text-center" : "text-left py-2.5 pl-3.5 pr-10",
+            iconOnly ? "w-[var(--ic-btn)] h-[var(--ic-btn)] p-0 justify-center" : "text-left py-2.5 pl-3.5 pr-10",
             item.disabled ? cx("bg-[#f4f5f2]", active ? "border-[#099aa5] shadow-[inset_0_0_0_1px_#099aa5] hover:border-[#e0e3de]" : "border-[#e0e3de]")
               : active ? "border-[#099aa5] bg-[#f1fbfb] shadow-[inset_0_0_0_1px_#099aa5]"
                 : "border-[#e0e3de] bg-[#fbfbf9] hover:border-[#c5cdc6] hover:bg-[#f4f6f2]")}>
-          {item.icon ? <span className={cx(BG_ICON, iconOnly ? "w-[34px] h-[34px] flex-[0_0_34px]" : "w-[22px] h-[22px] flex-[0_0_22px]")} style={{ backgroundImage: `url(${assetPath(item.icon)})` }} /> : null}
+          {item.icon ? <span className={cx(BG_ICON, "w-[var(--ic)] h-[var(--ic)] flex-none")} style={{ backgroundImage: `url(${assetPath(item.icon)})` }} /> : null}
           <span className={iconOnly ? "hidden" : "min-w-0 flex-1"}>
-            <strong className="block text-[14px] truncate">{item.title}</strong>
-            {item.subtitle ? <small className="block mt-[3px] text-[11px] text-[#8b928c] truncate">{item.subtitle}</small> : null}
+            <strong className="block fs-lg truncate">{item.title}</strong>
+            {item.subtitle ? <small className="block mt-[3px] fs-sm text-[#8b928c] truncate">{item.subtitle}</small> : null}
           </span>
-          {item.badge ? <b className={cx("absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[11px] py-0.5 px-2 text-[11px]", active ? "bg-[#099aa5] text-white" : "bg-[#eaefe9] text-[#4b5d50]")}>{item.badge}</b> : null}
+          {item.badge ? <b className={cx("absolute right-2.5 top-1/2 -translate-y-1/2 rounded-[11px] py-0.5 px-2 fs-sm", active ? "bg-[#099aa5] text-white" : "bg-[#eaefe9] text-[#4b5d50]")}>{item.badge}</b> : null}
         </button>;
       })}
     </div>
@@ -328,14 +315,14 @@ function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; ico
           setType(option);
           if (currentKey && series.find((item) => item.key === currentKey)?.weaponTypes.includes(option)) onPick(`${currentKey}::${option}`);
         }}
-        className={cx("w-[42px] h-[42px] max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-        <span aria-hidden="true" className={cx("block w-[30px] h-[30px] max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
+        className={cx("w-[var(--ic-btn)] h-[var(--ic-btn)] max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+        <span aria-hidden="true" className={cx("block w-[var(--ic)] h-[var(--ic)] max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
       </button>; })}
     </div>
     {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type)).map((item) => ({ ...item, name: weaponSeriesName(item.key, type, item.name) }))}
       value={currentType === type ? currentKey : ""} icons={iconsForWeapon(icons, type)} compact
       display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => onPick(`${key}::${type}`)} />
-      : <p className={cx(NOTE, "m-0")}>先點上面的武器種類。</p>}
+      : null}
   </>;
 }
 
@@ -368,13 +355,13 @@ function SkillTiers({ entries, slotGrades }: { entries: SeriesSkill[]; slotGrade
   const tiers = skillTiers(entries, slotGrades);
   if (!tiers.length) return <p className={NOTE}>這件裝備沒有技能。</p>;
   return <div>
-    {tiers.map((tier) => <p key={tier.grade} className="flex items-baseline gap-[7px] m-0 p-0 text-[12px] min-[621px]:text-[15px] leading-[1.6]">
-      <b className="flex-[0_0_26px] text-[11px] min-[621px]:text-[14px] text-[#8b948c] font-semibold">{tier.grade}-1</b>
-      <span className="text-[12px] min-[621px]:text-[15px] text-[#39423a]">
+    {tiers.map((tier) => <p key={tier.grade} className="flex items-baseline gap-[7px] m-0 p-0 fs-md leading-[1.6]">
+      <b className="flex-[0_0_26px] fs-sm text-[#8b948c] font-semibold">{tier.grade}-1</b>
+      <span className="fs-md text-[#39423a]">
         {tier.changes.map((change) => <em key={change.name} className="block not-italic">
-          {change.name}<span className="ml-1.5 text-[12px] min-[621px]:text-[15px] text-[#3e8e51] font-semibold">{tier.first ? change.to : `${change.from}→${change.to}`}</span>
+          {change.name}<span className="ml-1.5 fs-md text-[#3e8e51] font-semibold">{tier.first ? change.to : `${change.from}→${change.to}`}</span>
         </em>)}
-        {tier.slots ? <em className="block not-italic text-[#39423a]">{"⬡".repeat(tier.slots)} <span className="text-[12px] min-[621px]:text-[15px] text-[#5b635c] font-normal">鑲嵌槽 +{tier.slots}</span></em> : null}
+        {tier.slots ? <em className="block not-italic text-[#39423a]">{"⬡".repeat(tier.slots)} <span className="fs-md text-[#5b635c] font-normal">鑲嵌槽 +{tier.slots}</span></em> : null}
       </span>
     </p>)}
   </div>;
@@ -385,9 +372,9 @@ function SkillTiers({ entries, slotGrades }: { entries: SeriesSkill[]; slotGrade
 function DriftTabs({ tabs, value, onChange, big }: { tabs: { key: string; label: string }[]; value: string; onChange: (key: string) => void; big?: boolean }) {
   return <div className="flex flex-wrap gap-1.5 mb-2.5">
     {tabs.map((item) => <button key={item.key} onClick={() => onChange(item.key)}
-      className={cx("inline-flex items-center gap-[5px] border rounded-full cursor-pointer", big ? "py-[7px] px-3 text-[14px]" : "py-[5px] px-2.5 text-[13px]",
+      className={cx("inline-flex items-center gap-[5px] border rounded-full cursor-pointer", big ? "py-[7px] px-3 fs-lg" : "py-[5px] px-2.5 fs-md",
         value === item.key ? "border-[#39423a] bg-[#39423a] text-white" : "border-[#e3dac6] bg-[#fffaf0] text-[#39423a]")}>
-      <i className="w-2.5 h-2.5 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,.18)]" style={{ background: DRIFT_DOT[item.key] }} />{item.label}
+      <i className="w-2.5 h-2.5 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,.18)]" style={{ background: item.key === "common" ? RAINBOW_CSS : DRIFT_DOT[item.key] }} />{item.label}
     </button>)}
   </div>;
 }
@@ -397,9 +384,9 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
   const [tab, setTab] = useState(current ? driftColor(current, data) : "fire");
   const color = data.colors.find((item) => item.key === tab);
   const skillButton = (name: string, rare = false, cell = false) => <button key={name} onClick={() => onPick({ skill: name, color: tab })}
-    className={cx("inline-flex items-center gap-1 py-1.5 px-2.5 border rounded-lg text-[#2b332c] text-[13px] cursor-pointer", cell && SKILL_CELL,
+    className={cx("inline-flex items-center gap-1 py-1.5 px-2.5 border rounded-lg text-[#2b332c] fs-md cursor-pointer", cell && SKILL_CELL,
       current?.skill === name && driftColor(current, data) === tab ? "border-[#e08a00] bg-[#fff3dc]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#c9bd9f]")}>
-    {name}{rare ? <em className="not-italic text-[#e08a00] text-[12px]">★</em> : null}
+    {name}{rare ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}
   </button>;
   return <div>
     <DriftTabs tabs={[...data.colors.map((item) => ({ key: item.key, label: item.label })), { key: "common", label: "共通" }, { key: "event", label: "神秘" }]} value={tab} onChange={setTab} />
@@ -408,10 +395,10 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
       {color ? <SkillGroups names={color.skills.map((skill) => skill.name)} renderSkill={(name) => skillButton(name, color.skills.find((skill) => skill.name === name)?.rare, true)} /> : null}
       {tab === "common" ? <SkillGroups names={data.common} renderSkill={(name) => skillButton(name, false, true)} /> : null}
       {tab === "event" ? data.events.map((group) => <div key={group.key} className="flex-[0_0_100%] flex flex-wrap gap-1.5 items-center">
-        <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] text-[11px]">{group.label}</small>{group.skills.map((name) => skillButton(name, mixedRare(group, name)))}
+        <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] fs-sm">{group.label}</small>{group.skills.map((name) => skillButton(name, mixedRare(group, name)))}
       </div>) : null}
     </div>
-    {current ? <button className="mt-3 py-1.5 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] text-[13px] cursor-pointer" onClick={() => onPick(null)}>清除這個洞</button> : null}
+    {current ? <button className="mt-3 py-1.5 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] fs-md cursor-pointer" onClick={() => onPick(null)}>清除這個洞</button> : null}
   </div>;
 }
 
@@ -424,9 +411,9 @@ function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; ic
   const skillName = (name: string) => <button onClick={() => onSkill(name)}
     className="border-0 bg-transparent p-0 text-inherit cursor-pointer underline decoration-dotted decoration-[#b9b2a0] underline-offset-[3px]">{name}</button>;
   const panel = "mt-0 mx-0 mb-3 bg-white border border-[#dfe2dc] rounded-[9px] pt-1.5 px-3.5 pb-3";
-  const panelTitle = "text-[14px] mt-2 mx-0 mb-1.5";
-  const chipList = <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-[#39423a]">{data.common.map((name) => <span key={name}>{skillName(name)}</span>)}</div>;
-  const row = "flex justify-between items-center m-0 text-[14px]";
+  const panelTitle = "fs-lg mt-2 mx-0 mb-1.5";
+  const chipList = <div className="flex flex-wrap gap-x-3 gap-y-1 fs-md text-[#39423a]">{data.common.map((name) => <span key={name}>{skillName(name)}</span>)}</div>;
+  const row = "flex justify-between items-center m-0 fs-lg";
   return <div>
     <DriftTabs big tabs={chips} value={tab} onChange={setTab} />
     {color ? <>
@@ -434,16 +421,16 @@ function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; ic
         <h3 className={panelTitle}>來源魔物（{color.sources.length}）</h3>
         <div>
           {color.sources.map((source) => <p key={source.key} className="flex items-center gap-2 m-0 py-[5px] border-b border-[#f1efe8] last:border-b-0">
-            <span className={cx("flex-[0_0_32px] h-8", BG_ICON)} style={icons[source.key] ? { backgroundImage: `url(${assetPath(icons[source.key])})` } : undefined} />
-            <strong className="text-[14px]">{source.name}</strong>
-            <small className="ml-auto text-[#8b938c] text-[12px]">{source.parts ? source.parts.join("、") : "掉落部位未收錄"}</small>
+            <span className={cx("w-[var(--ic)] h-[var(--ic)] flex-none", BG_ICON)} style={icons[source.key] ? { backgroundImage: `url(${assetPath(icons[source.key])})` } : undefined} />
+            <strong className="fs-lg">{source.name}</strong>
+            <small className="ml-auto text-[#8b938c] fs-md">{source.parts ? source.parts.join("、") : "掉落部位未收錄"}</small>
           </p>)}
         </div>
       </section>
       <section className={panel}>
         <h3 className={panelTitle}>技能池</h3>
         {color.skills.map((skill) => <p key={skill.name} className={cx(row, "py-1.5 border-b border-[#f1efe8]")}>
-          <span>{skillName(skill.name)}{skill.rare ? <em className="ml-2 py-px px-1.5 rounded bg-[#fff3dc] text-[#e08a00] not-italic text-[11px] font-bold">稀有</em> : null}</span>
+          <span>{skillName(skill.name)}{skill.rare ? <em className="ml-2 py-px px-1.5 rounded bg-[#fff3dc] text-[#e08a00] not-italic fs-sm font-bold">稀有</em> : null}</span>
           <b className={cx("tabular-nums", skill.rare ? "text-[#e08a00]" : "text-[#39423a]")}>{skill.chance.toFixed(1)}%</b>
         </p>)}
         <p className={cx(row, "pt-2.5 pb-1.5 text-[#6d756e]")}><span>共通技能（{data.common.length} 個）</span><b className="tabular-nums text-[#39423a]">各 {color.commonChance.toFixed(1)}%</b></p>
@@ -452,9 +439,9 @@ function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; ic
       <p className={NOTE}>機率照 mhn.quest 畫面上的算法：稀有技能平分 10%，其餘（共通＋這個顏色的非稀有）平分 90%。</p>
     </> : null}
     {tab === "common" ? <section className={panel}><h3 className={panelTitle}>共通技能（{data.common.length}）</h3>{chipList}<p className={NOTE}>每種顏色的漂流石都可能出現共通技能，機率看顏色，請到各顏色頁查看。</p></section> : null}
-    {tab === "event" ? <section className={panel}><h3 className={panelTitle}>神秘漂流石（{data.events.length} 組）</h3>{data.events.map((group) => <p key={group.key} className="flex gap-2.5 m-0 py-1.5 border-b border-[#f1efe8] text-[13px] leading-[1.6]">
-      <small className="flex-[0_0_52px] text-[#8b5fc7] font-bold text-[12px]">{group.label}</small>
-      <span className="flex flex-wrap gap-x-3 gap-y-0">{group.skills.map((name) => <span key={name}>{skillName(name)}{mixedRare(group, name) ? <em className="not-italic text-[#e08a00] text-[12px]">★</em> : null}</span>)}</span>
+    {tab === "event" ? <section className={panel}><h3 className={panelTitle}>神秘漂流石（{data.events.length} 組）</h3>{data.events.map((group) => <p key={group.key} className="flex gap-2.5 m-0 py-1.5 border-b border-[#f1efe8] fs-md leading-[1.6]">
+      <small className="flex-[0_0_52px] text-[#8b5fc7] font-bold fs-md">{group.label}</small>
+      <span className="flex flex-wrap gap-x-3 gap-y-0">{group.skills.map((name) => <span key={name}>{skillName(name)}{mixedRare(group, name) ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}</span>)}</span>
     </p>)}<p className={NOTE}>來源資料沒有神秘漂流石的取得方式與機率。</p></section> : null}
   </div>;
 }
@@ -480,7 +467,7 @@ function TraitSummary({ traits }: { traits: WeaponTraits }) {
 /** 狩獵笛的音符：b 藍、r 橘（mhn.quest 的 note-b / note-r 圖示）。 */
 const NOTE_COLOR: Record<string, string> = { b: "text-[#1ea7e8]", r: "text-[#f08a1c]" };
 function Notes({ notes }: { notes: string }) {
-  return <span className="inline-flex flex-[0_0_64px]">{[...notes].map((note, position) => <i key={position} className={cx("not-italic text-[14px] min-[621px]:text-[17px] font-bold leading-none", NOTE_COLOR[note])}>♪</i>)}</span>;
+  return <span className="inline-flex flex-[0_0_64px]">{[...notes].map((note, position) => <i key={position} className={cx("not-italic fs-lg font-bold leading-none", NOTE_COLOR[note])}>♪</i>)}</span>;
 }
 
 /** 展開區的完整武器特性：每一行「標籤＋值」。 */
@@ -491,8 +478,8 @@ function TraitLine({ label, children }: { label: string; children: ReactNode }) 
 function TraitDetail({ traits }: { traits: WeaponTraits }) {
   const th = "text-left font-semibold text-[#8b938c] py-0.5 px-1 border-b border-[#e8dfcb]";
   const td = "py-[3px] px-1 border-b border-[#f1ebdc]";
-  return <div className="flex flex-col gap-1 text-[12px] min-[621px]:text-[15px] text-[#39423a]">
-    {traits.ammo?.length ? <table className="w-full border-collapse text-[12px] min-[621px]:text-[15px]">
+  return <div className="flex flex-col gap-1 fs-md text-[#39423a]">
+    {traits.ammo?.length ? <table className="w-full border-collapse fs-md">
       <thead><tr><th className={th}>彈種</th><th className={th}>彈數</th><th className={th}>後座力</th><th className={th}>裝填</th></tr></thead>
       {/* 同一種彈可能佔兩格（冰狼龍輕弩的貫通冰結彈 3 發、4 發），名稱不唯一，key 用順序。 */}
       <tbody>{traits.ammo.map((ammo, position) => <tr key={position}><td className={td}>{ammo.name}</td><td className={cx(td, "text-[#3b7fb8] font-bold")}>{ammo.num}</td><td className={td}>{ammo.recoil}</td><td className={td}>{ammo.reload}</td></tr>)}</tbody>
@@ -594,22 +581,22 @@ function GatherDropdown({ keys, counts, hidden, onChange }: {
   const others = hidden.filter((key) => !keys.includes(key));
   const tone = shown.length === keys.length ? "bg-[#17231d] text-white border-[#17231d]"
     : shown.length ? "bg-[#5b635c] text-white border-[#5b635c]" : "bg-white text-[#8b938c] border-[#d9d9d9] hover:border-[#b5bbb5]";
-  const link = "border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline";
+  const link = "border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer hover:underline";
   return <div ref={box} className="relative">
     <button aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}
-      className={cx("inline-flex items-center gap-1 py-1 px-2.5 border rounded-full text-[12px] cursor-pointer", tone)}>
-      採集素材<small className="opacity-70">{shown.length}/{keys.length}</small><span className="text-[10px]">▾</span>
+      className={cx("inline-flex items-center gap-1 py-1 px-2.5 border rounded-full fs-md cursor-pointer", tone)}>
+      採集素材<small className="opacity-70">{shown.length}/{keys.length}</small><span className="fs-sm">▾</span>
     </button>
     {open ? <div role="menu" className="absolute left-0 top-full mt-1 z-20 min-w-[170px] p-2 rounded-lg bg-white border border-[#dfe2dc] shadow-[0_6px_20px_rgba(0,0,0,.15)]">
       <div className="flex justify-between gap-3 px-1 pb-1.5 mb-1 border-b border-[#eff0ed]">
         <button className={link} onClick={() => onChange(others)}>全選</button>
         <button className={link} onClick={() => onChange([...others, ...keys])}>全不選</button>
       </div>
-      {keys.map((key) => <label key={key} className="flex items-center gap-2 py-1 px-1 rounded text-[13px] text-[#2b332c] cursor-pointer hover:bg-[#f3eee2]">
+      {keys.map((key) => <label key={key} className="flex items-center gap-2 py-1 px-1 rounded fs-md text-[#2b332c] cursor-pointer hover:bg-[#f3eee2]">
         <input type="checkbox" className="m-0 accent-[#099aa5]" checked={!hidden.includes(key)}
           onChange={() => onChange(hidden.includes(key) ? hidden.filter((item) => item !== key) : [...hidden, key])} />
         <span className="flex-1">{categoryLabel(key).replace("採集・", "")}</span>
-        <small className="text-[11px] text-[#8b938c]">{counts[key]}</small>
+        <small className="fs-sm text-[#8b938c]">{counts[key]}</small>
       </label>)}
     </div> : null}
   </div>;
@@ -627,16 +614,16 @@ function MissingSummary({ builds, settings, onChange, total, loading, monsterNam
   // 同一隻魔物的素材排在一起（依魔物名稱），魔物內再照稀有度、數量。
   const visible = total.materials.filter((item) => !settings.hiddenCategories.includes(materialCategory(item)))
     .sort((a, b) => compareMaterials(a, b, monsterName));
-  const chip = (active: boolean) => cx("inline-flex items-center gap-1 py-1 px-2.5 border rounded-full text-[12px] cursor-pointer max-w-[160px]",
+  const chip = (active: boolean) => cx("inline-flex items-center gap-1 py-1 px-2.5 border rounded-full fs-md cursor-pointer max-w-[160px]",
     active ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white text-[#8b938c] border-[#d9d9d9] hover:border-[#b5bbb5]");
   const toggle = (list: string[], value: string) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
   // 「配裝」「素材」是左欄，tag 在右欄換行，每一行的 tag 都從同一個位置開始。
-  const label = "py-1 text-[12px] leading-[18px] text-[#8b938c]";
+  const label = "py-1 fs-md leading-[18px] text-[#8b938c]";
   const tags = "min-w-0 flex flex-wrap items-center gap-1.5";
   return <section className="col-span-full flex flex-col gap-2 p-3 max-[620px]:p-2 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-      <strong className="text-[15px] text-[#2b332c]">缺少素材統計</strong>
-      <span className="text-[12px] text-[#6d756e]">{total.pieces} 件裝備　Zenny <b className="text-[14px] text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
+      <strong className="fs-lg text-[#2b332c]">缺少素材統計</strong>
+      <span className="fs-md text-[#6d756e]">{total.pieces} 件裝備　Zenny <b className="fs-lg text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
     </div>
     <div className="grid grid-cols-[auto_1fr] items-start gap-x-2 gap-y-2"><span className={label}>配裝</span><div className={tags}>
       {builds.map((build) => { const on = !settings.excludedBuilds.includes(build.id); return <button key={build.id} aria-pressed={on} title={build.name}
@@ -662,7 +649,7 @@ function MissingSummary({ builds, settings, onChange, total, loading, monsterNam
       : present.length && !visible.length ? <p className={cx(NOTE, "m-0")}>勾選的素材類別目前都不缺；點上面的類別可以顯示其他素材。</p>
         // 由上往下排再換欄（不是左右排），同一隻魔物的素材才會連成一塊。
         : <div className="columns-[210px] gap-x-5">{visible.map((item) => <p key={item.name}
-          className="flex justify-between items-center gap-2 m-0 py-1 border-b border-[#f1ebdc] text-[13px] text-[#2b332c] break-inside-avoid">
+          className="flex justify-between items-center gap-2 m-0 py-1 border-b border-[#f1ebdc] fs-md text-[#2b332c] break-inside-avoid">
           <span className="flex items-center min-w-0">{item.rare ? <Rare rare={item.rare} /> : null}<span className="truncate">{item.name}</span></span>
           <b className="tabular-nums whitespace-nowrap">{item.quantity.toLocaleString()} 個</b>
         </p>)}</div>}
@@ -681,9 +668,9 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
     const passed = rows.findIndex((row) => row.grade === target) <= nextIndex;
     onChange({ current: next, target: targetForCurrent ? targetForCurrent(next) : !passed ? target : allowNone ? "" : rows[nextIndex + 1]?.grade ?? "" });
   }
-  const label = cx("grid flex-1 text-[#657068]", compact ? "gap-[3px] text-[11px] min-[621px]:text-[14px]" : "gap-1.5 text-[15px]");
-  const select = cx("w-full border border-[#ccd3ce] bg-white text-[#17231d]", compact ? "py-[5px] px-1.5 text-[14px] min-[621px]:text-[17px] rounded-md" : "p-2.5 text-[17px] rounded-lg");
-  const stepLine = "flex justify-between items-center gap-2 m-0 py-0.5 text-[13px] min-[621px]:text-[16px] leading-[1.5]";
+  const label = cx("grid flex-1 text-[#657068]", compact ? "gap-[3px] fs-sm" : "gap-1.5 fs-lg");
+  const select = cx("w-full border border-[#ccd3ce] bg-white text-[#17231d]", compact ? "py-[5px] px-1.5 fs-lg rounded-md" : "p-2.5 fs-xl rounded-lg");
+  const stepLine = "flex justify-between items-center gap-2 m-0 py-0.5 fs-md leading-[1.5]";
   const quantity = "font-bold tabular-nums whitespace-nowrap";
   return <div>
     <div className={cx("flex items-end mt-0 mx-0", compact ? "gap-2 mb-2 p-2 rounded-lg bg-[#f3eee2]" : "gap-3.5 mb-[18px] p-4 rounded-xl bg-[#f5f7f5]")}>
@@ -692,9 +679,9 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
       <label className={label}>目標階級<select className={select} value={target} onChange={(event) => onChange({ ...value, target: event.target.value })}>{allowNone ? <option value="">不升級</option> : null}{rows.filter((row, position) => position > currentIndex).map((row) => <option key={row.grade}>{row.grade}</option>)}</select></label>
     </div>
     {compact ? null : <section className="mt-0 mx-0 mb-4 bg-white border border-[#dfe2dc] rounded-[9px] overflow-hidden">
-      <h3 className="text-[14px] min-[621px]:text-[17px] m-0 py-3 px-3.5 border-b border-[#e5e7e2]">逐階明細（{steps.length} 階）</h3>
+      <h3 className="fs-lg m-0 py-3 px-3.5 border-b border-[#e5e7e2]">逐階明細（{steps.length} 階）</h3>
       {steps.map((row, position) => <div key={row.grade} className="grid grid-cols-[48px_1fr] gap-2 py-[9px] px-3.5 border-b border-[#eff0ed] last:border-b-0">
-        <b className="text-[14px] min-[621px]:text-[17px] text-[#2b332c] leading-[1.7]">{row.grade}{value.current === "unforged" && position === 0 ? <em className="block not-italic text-[10px] min-[621px]:text-[12px] font-semibold text-[#e08a00] leading-[1.2]">生產</em> : null}</b>
+        <b className="fs-lg text-[#2b332c] leading-[1.7]">{row.grade}{value.current === "unforged" && position === 0 ? <em className="block not-italic fs-sm font-semibold text-[#e08a00] leading-[1.2]">生產</em> : null}</b>
         <div>
           <p className={cx(stepLine, "text-[#8b938c] [border-bottom:1px_dashed_#eee6d4] mb-0.5 pb-[3px]")}><span className="flex items-center flex-wrap">Zenny</span><strong className={cx(quantity, "text-[#2b332c]")}>{row.zenny.toLocaleString()}</strong></p>
           {[...row.materials].sort(compareMaterials).map((item, order) => <p key={`${item.name}-${order}`} className={stepLine}><span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}</span><strong className={quantity}>× {item.quantity}</strong></p>)}
@@ -703,17 +690,17 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
     </section>}
     {!target ? <p className={cx(NOTE, "m-0")}>不升級：不計算素材。要規劃升級時再選目標階級。</p> : <>
     <div className={cx("flex items-baseline", compact ? "mt-0 mx-0 mb-2 py-2 px-3 gap-2 rounded-[7px] bg-[#f3eee2] text-[#2b332c]" : "my-5 mx-0 py-[17px] px-5 gap-3 rounded-lg bg-[#28352e] text-white")}>
-      <span className={compact ? "text-[11px] min-[621px]:text-[14px]" : "text-[13px] min-[621px]:text-[16px]"}>所需 Zenny</span>
-      <strong className={cx("ml-auto font-bold tabular-nums", compact ? "text-[20px] text-[#e08a00]" : "text-[31px]")}>{total.zenny.toLocaleString()}</strong>
-      <small className={compact ? "text-[11px] min-[621px]:text-[14px] text-[#8b938c]" : "text-[12px] min-[621px]:text-[15px] text-[#bac3bc]"}>{total.materials.length} 種素材</small>
+      <span className={compact ? "fs-sm" : "fs-md"}>所需 Zenny</span>
+      <strong className={cx("ml-auto font-bold tabular-nums", compact ? "fs-xl text-[#e08a00]" : "text-[31px]")}>{total.zenny.toLocaleString()}</strong>
+      <small className={compact ? "fs-sm text-[#8b938c]" : "fs-md text-[#bac3bc]"}>{total.materials.length} 種素材</small>
     </div>
-    {hasUnknown ? <p className={compact ? "mt-0 mx-0 mb-2 text-[11px] min-[621px]:text-[14px] text-[#858d86] leading-[1.7]" : NOTE}>部分階級有素材尚未辨識，暫時顯示原始代碼（如「ib」），詳見 docs/mhnow-待確認事項.md。</p> : null}
+    {hasUnknown ? <p className={compact ? "mt-0 mx-0 mb-2 fs-sm text-[#858d86] leading-[1.7]" : NOTE}>部分階級有素材尚未辨識，暫時顯示原始代碼（如「ib」），詳見 docs/mhnow-待確認事項.md。</p> : null}
     <section className={cx("bg-white border border-[#dfe2dc] overflow-hidden", compact ? "m-0 rounded-[7px]" : "mb-4 rounded-[9px]")}>
-      <h3 className={compact ? "hidden" : "text-[14px] min-[621px]:text-[17px] m-0 py-[15px] px-[18px] border-b border-[#e5e7e2]"}>素材總計</h3>
+      <h3 className={compact ? "hidden" : "fs-lg m-0 py-[15px] px-[18px] border-b border-[#e5e7e2]"}>素材總計</h3>
       <div className={cx("grid", compact ? "grid-cols-[1fr] py-0.5 px-2.5" : "grid-cols-[1fr_1fr] py-1.5 px-[18px] max-[720px]:grid-cols-[1fr]")}>{total.materials.map((item) => <p key={item.name}
-        className={cx("flex justify-between m-0 border-b border-[#eff0ed]", compact ? "py-1.5 text-[12px] min-[621px]:text-[15px]" : "py-[11px] text-[13px] min-[621px]:text-[16px] odd:mr-[22px] max-[720px]:odd:mr-0")}>
-        <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}{item.unknown ? <small className="block text-[#8a8a8a] text-[14px] min-[621px]:text-[17px] font-normal mt-0.5">尚未辨識</small> : null}</span>
-        <strong className={cx("font-bold tabular-nums", compact ? "text-[13px] min-[621px]:text-[16px]" : "text-[15px]")}>× {item.quantity}</strong>
+        className={cx("flex justify-between m-0 border-b border-[#eff0ed]", compact ? "py-1.5 fs-md" : "py-[11px] fs-md odd:mr-[22px] max-[720px]:odd:mr-0")}>
+        <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}{item.unknown ? <small className="block text-[#8a8a8a] fs-lg font-normal mt-0.5">尚未辨識</small> : null}</span>
+        <strong className={cx("font-bold tabular-nums", compact ? "fs-md" : "fs-lg")}>× {item.quantity}</strong>
       </p>)}</div>
     </section>
     </>}
@@ -726,7 +713,7 @@ const RARE_COLOR: Record<number, string> = {
   5: "bg-[#f6e2c4] text-[#a86300]", 6: "bg-[#f4d3d0] text-[#b23a30]",
 };
 function Rare({ rare }: { rare: number }) {
-  return <i className={cx("inline-block min-w-6 mr-[7px] py-px px-1 rounded not-italic text-[11px] font-bold leading-[1.4] text-center", RARE_COLOR[rare] ?? "bg-[#ece8dc] text-[#6d756e]")}>R{rare}</i>;
+  return <i className={cx("inline-block min-w-6 mr-[7px] py-px px-1 rounded not-italic fs-sm font-bold leading-[1.4] text-center", RARE_COLOR[rare] ?? "bg-[#ece8dc] text-[#6d756e]")}>R{rare}</i>;
 }
 
 type SlotId = "weapon" | ArmorSlot;
@@ -768,7 +755,7 @@ function maxSkillsOf(build: Build, rows: GearRow[]) {
 
 /** 收合時列在裝備下方：從目前階級升到目標階級還要的 Zenny 與素材。 */
 function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefined; range: GradeRange; waived?: boolean }) {
-  const frame = "flex-[0_0_100%] pt-1.5 px-2.5 pb-2 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7] text-[12px] min-[621px]:text-[15px] text-[#39423a]";
+  const frame = "flex-[0_0_100%] pt-1.5 px-2.5 pb-2 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7] fs-md text-[#39423a]";
   // 沒選目標就不列（也不會去抓升級資料），要先判斷，不然會一直停在「載入中」。
   if (!range.target) return null;
   if (!rows) return <div className={cx(frame, "text-[#858d86]")}>升級資料載入中……</div>;
@@ -777,9 +764,9 @@ function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefine
   if (!target) return null;
   const total = calculateRange(rows, range.current, target);
   return <div className={frame}>
-    <p className="flex justify-between items-baseline m-0 mb-0.5 text-[11px] min-[621px]:text-[14px] text-[#6d756e]">
+    <p className="flex justify-between items-baseline m-0 mb-0.5 fs-sm text-[#6d756e]">
       <span>缺少素材　{range.current === "unforged" ? "尚未生產" : range.current} → {target}{waived ? <b className="ml-1.5 font-normal text-[#087b84]">減免中</b> : null}</span>
-      <span>Zenny <b className="text-[12px] min-[621px]:text-[15px] text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
+      <span>Zenny <b className="fs-md text-[#e08a00] tabular-nums">{total.zenny.toLocaleString()}</b></span>
     </p>
     {total.materials.map((item) => <p key={item.name} className="flex justify-between items-center m-0 py-px leading-[1.5]">
       <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}</span>
@@ -789,7 +776,9 @@ function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefine
 }
 
 /** BuildCard 需要的共用資料（每張卡都一樣）。gradeRowsFor 已套用素材減免；discounted 是減免中的魔物。 */
-type CardContext = { icons: Record<string, string>; skillLevels: Record<string, string[]>; driftstones: Driftstones | null; gradeRowsFor: (key: string, kind: string) => GradeRow[] | undefined; discounted: string[] };
+type CardContext = { icons: Record<string, string>; skillLevels: Record<string, string[]>; driftstones: Driftstones | null; gradeRowsFor: (key: string, kind: string) => GradeRow[] | undefined; discounted: string[];
+  /** 每件裝備已練成的漂流石技能（裝備代號 → 技能）。沒給＝全部當成已有（社群配裝那種唯讀卡片）。 */
+  forged?: Record<string, string[]> };
 
 /** 技能總覽用：每個技能由哪些顏色的漂流石提供、各幾顆（只算實際有洞的）。 */
 function driftStonesBySkill(build: Build, rows: GearRow[], data: Driftstones | null) {
@@ -818,7 +807,7 @@ function SortableBuild({ id, name, children, onMove, onStep }: {
   const [drop, setDrop] = useState<{ id: string; side: "before" | "after"; x: number; y: number; width: number; height: number } | null>(null);
   return <div data-sort-build={id} className={cx("min-w-0 rounded-xl", dragging && "opacity-70 ring-2 ring-[#099aa5]")}>
     <button aria-label={`移動${name}`} title="拖曳移動配裝；也可聚焦後按方向鍵前後移動"
-      className="w-full border-0 bg-transparent text-[#687168] text-[12px] min-[621px]:text-[15px] py-1 cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline-[#099aa5]"
+      className="w-full border-0 bg-transparent text-[#687168] fs-md py-1 cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline-[#099aa5]"
       onKeyDown={(event) => {
         if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
           event.preventDefault(); onStep(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1);
@@ -860,73 +849,81 @@ function CurrentGradeInput({ value, title, onCommit }: { value: string; title: s
     title={invalid ? "請輸入 2-1 到 10-5，例如 6-1" : "目前等級：2-1 到 10-5；Enter 或離開欄位儲存，清空表示尚未生產"}
     onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit}
     onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setDraft(value === "unforged" ? "" : value); setInvalid(false); } }}
-    className={cx("w-12 box-border rounded border bg-white px-0.5 py-0.5 text-center text-[11px] min-[621px]:text-[14px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#099aa5]", invalid ? "border-red-500 text-red-700" : "border-[#d8d0bd] text-[#28352e]")} />;
+    className={cx("w-12 box-border rounded border bg-white px-0.5 py-0.5 text-center fs-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-[#099aa5]", invalid ? "border-red-500 text-red-700" : "border-[#d8d0bd] text-[#28352e]")} />;
 }
 
-function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete, onShare }: {
+/**
+ * readOnly：只看不改（社群配裝用）。不顯示名稱／缺少素材／分享／刪除／依技能選裝備，裝備列不能點，沒有升級明細；
+ * 頂端換成 header、最底下接 footer。
+ */
+function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete, onShare, readOnly, header, footer }: {
   build: Build; rows: GearRow[]; ctx: CardContext; editingSlot: SlotId | null; open: (slot: SlotId) => boolean; canDelete: boolean;
   onEdit: (slot: SlotId) => void; onToggle: (slot: SlotId) => void; onDrift: (slot: ArmorSlot, index: number) => void; onSkill: (name: string, level: number) => void;
   onChange: (update: (build: Build) => Build) => void; onDelete: () => void; onSkillGear: () => void; onShare: () => void;
+  readOnly?: boolean; header?: ReactNode; footer?: ReactNode;
 }) {
   const skills = maxSkillsOf(build, rows);
   const stones = driftStonesBySkill(build, rows, ctx.driftstones);
   const anyStone = Object.keys(stones).length > 0;
-  const h4 = (first?: boolean) => cx("mb-1.5 mx-0 text-[12px] min-[621px]:text-[15px] text-[#6d756e] font-bold", first ? "mt-1 pt-0" : "mt-3 pt-2.5 [border-top:1px_dashed_#e8dfcb]");
-  const toolButton = "flex-none py-1 px-2 border rounded-md text-[12px] min-[621px]:text-[15px] cursor-pointer";
+  const h4 = (first?: boolean) => cx("mb-1.5 mx-0 fs-md text-[#6d756e] font-bold", first ? "mt-1 pt-0" : "mt-3 pt-2.5 [border-top:1px_dashed_#e8dfcb]");
+  const toolButton = "flex-none py-1 px-2 border rounded-md fs-md cursor-pointer";
   return <article id={`build-${build.id}`} className="min-w-0 flex flex-col gap-1.5 p-2 max-[620px]:p-1.5 rounded-xl bg-[#ece8dc] border border-[#d8d0bd]">
-    <div className="flex items-center gap-1.5">
+    {readOnly ? header : <div className="flex items-center gap-1.5">
       <input aria-label="配裝名稱" value={build.name} maxLength={20} placeholder="配裝名稱" onChange={(event) => { const name = event.target.value; onChange((next) => ({ ...next, name })); }}
-        className="flex-1 min-w-0 py-1 px-2 border border-[#d8d0bd] rounded-md bg-white text-[13px] min-[621px]:text-[16px] font-bold text-[#2b332c] outline-none focus:border-[#099aa5]" />
+        className="flex-1 min-w-0 py-1 px-2 border border-[#d8d0bd] rounded-md bg-white fs-md font-bold text-[#2b332c] outline-none focus:border-[#099aa5]" />
       <button aria-pressed={build.showMissing} title="有設定目標階級的裝備，都在下方列出還缺的素材" onClick={() => onChange((next) => ({ ...next, showMissing: !next.showMissing }))}
         className={cx(toolButton, build.showMissing ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>{build.showMissing ? "✓ " : ""}顯示缺少素材</button>
       <button title="產生分享碼與 QR Code，別人貼上就能加入這組配裝" onClick={onShare}
         className={cx(toolButton, "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>分享</button>
       <button disabled={!canDelete} title={canDelete ? "刪除這組配裝" : "至少要留一組"} onClick={onDelete}
         className={cx(toolButton, "border-[#e3b8b4] bg-white text-[#b23a30]")}>刪除</button>
-    </div>
+    </div>}
 
-    <button onClick={onSkillGear} className="py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] text-[13px] min-[621px]:text-[16px] cursor-pointer">依技能選全身裝備</button>
+    {readOnly ? null : <button onClick={onSkillGear} className="py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] fs-md cursor-pointer">依技能選全身裝備</button>}
     {rows.map((row) => {
       const isOpen = open(row.id);
       const piece = pieceOf(build, row.id, row.itemKey);
       const gradeRows = row.item ? ctx.gradeRowsFor(row.item.key, row.kind) : undefined;
       const waived = row.id === "weapon" && !!row.item && ctx.discounted.includes(row.item.key);
       const drifts = build.drifts[row.id] ?? [];
+      // 這件裝備已練成的漂流石；唯讀的社群卡片、或沒有 ctx.forged，就全部當成已有。
+      const learned = !readOnly && ctx.forged && row.item ? ctx.forged[gearId(row.id, row.itemKey)] ?? [] : null;
+      const owns = (pick: DriftPick) => !learned || learned.includes(pick.skill);
       return <div key={row.id}
         className={cx("relative flex flex-wrap items-stretch bg-[#fffaf0] border rounded-[10px] overflow-hidden",
           editingSlot === row.id ? "border-[#099aa5] shadow-[0_0_0_2px_rgba(9,154,165,.25)]" : "border-[#e3dac6] hover:border-[#c9bd9f]")}>
         <div className="shrink-0 flex flex-col items-center justify-center gap-1 pl-2 py-1.5">
-          {row.item ? <CurrentGradeInput key={row.itemKey} value={piece.current} title={row.title} onCommit={(current) => {
+          {row.item && !readOnly ? <CurrentGradeInput key={row.itemKey} value={piece.current} title={row.title} onCommit={(current) => {
             if (current === piece.current) return;
             onChange((next) => setPiece(next, row.id, { item: row.itemKey, current, target: automaticTarget(row.id, row.entries, current, row.item?.unlock) }));
           }} /> : null}
-          <button aria-label={`選擇${row.title}`} onClick={() => onEdit(row.id)} className="w-10 h-10 border-0 rounded-lg bg-[#ebe6d9] grid place-items-center cursor-pointer">
+          <button aria-label={`選擇${row.title}`} tabIndex={readOnly ? -1 : undefined} onClick={() => onEdit(row.id)} className={cx("w-10 h-10 border-0 rounded-lg bg-[#ebe6d9] grid place-items-center", readOnly ? "cursor-default" : "cursor-pointer")}>
             <span className={cx("w-[26px] h-[26px] flex-[0_0_26px]", BG_ICON, !row.item && "opacity-[.45]")} style={{ backgroundImage: `url(${assetPath(row.icon)})` }} />
           </button>
         </div>
-        <button className="flex-1 min-w-0 flex items-center gap-2 py-1.5 px-2 border-0 bg-transparent text-left cursor-pointer text-[#2b332c]" title={row.title} onClick={() => onEdit(row.id)}>
+        <button tabIndex={readOnly ? -1 : undefined} className={cx("flex-1 min-w-0 flex items-center gap-2 py-1.5 px-2 border-0 bg-transparent text-left text-[#2b332c]", readOnly ? "cursor-default" : "cursor-pointer")} title={row.title} onClick={() => onEdit(row.id)}>
           {row.item ? <>
             {ctx.icons[row.item.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item.key])})` }} /> : null}
             <span className="min-w-0 flex flex-col gap-0.5">
-              <strong className="text-[14px] min-[621px]:text-[17px] font-bold truncate">{row.title}</strong>
+              <strong className="fs-lg font-bold truncate">{row.title}</strong>
               <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{Object.entries(skillsAtGrade(row.entries, MAX_GRADE)).map(([name, level]) => <span key={name}>{name} <b className="text-[#e08a00] font-bold">{level}</b></span>)}</small>
               {drifts.slice(0, row.slotGrades.length).some(Boolean) ? <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{drifts.slice(0, row.slotGrades.length).map((pick, position) => pick
-                ? <span key={position} className="inline-flex items-center gap-[3px]"><DriftHex color={driftColor(pick, ctx.driftstones)} size={11} />{pick.skill}</span> : null)}</small> : null}
+                ? <span key={position} className={cx("inline-flex items-center gap-[3px]", !owns(pick) && "opacity-60")}><DriftHex color={driftColor(pick, ctx.driftstones)} size={11} />{pick.skill}{!owns(pick) ? <em className="not-italic fs-sm text-[#b26a00]">尚未</em> : null}</span> : null)}</small> : null}
               {row.traits && !row.itemKey.endsWith("::insect-glaive") ? <TraitSummary traits={row.traits} /> : null}
             </span>
-          </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="text-[14px] min-[621px]:text-[17px] font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
+          </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="fs-lg font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
         </button>
         {row.item && row.slotGrades.length ? <span className="flex-none flex items-center gap-0.5 px-0.5">
-          {row.slotGrades.map((grade, position) => { const pick = drifts[position]; return <button key={position}
-            className={cx("border-0 bg-transparent py-1 px-[3px] rounded-md text-[18px] min-[621px]:text-[21px] leading-none cursor-pointer hover:bg-[#f3ecdb]", pick ? "" : "text-[#8a939c] hover:text-[#39423a]")}
-            title={pick ? `${pick.skill}（${grade}-1 解鎖）點擊更換` : `鑲嵌槽（${grade}-1 解鎖）點擊選漂流石技能`}
-            onClick={() => onDrift(row.id as ArmorSlot, position)}>{pick ? <DriftHex color={driftColor(pick, ctx.driftstones)} size={17} /> : "⬡"}</button>; })}
+          {row.slotGrades.map((grade, position) => { const pick = drifts[position]; return <button key={position} tabIndex={readOnly ? -1 : undefined}
+            className={cx("border-0 bg-transparent py-1 px-[3px] rounded-md fs-xl leading-none", readOnly ? "cursor-default" : "cursor-pointer hover:bg-[#f3ecdb]", pick ? "" : "text-[#8a939c]", !readOnly && !pick && "hover:text-[#39423a]")}
+            title={readOnly ? (pick ? `${pick.skill}（${grade}-1 解鎖）` : `鑲嵌槽（${grade}-1 解鎖）`) : pick ? `${pick.skill}（${grade}-1 解鎖）${owns(pick) ? "已練成" : "尚未練成"}，點擊更換` : `鑲嵌槽（${grade}-1 解鎖）點擊選漂流石技能`}
+            onClick={() => onDrift(row.id as ArmorSlot, position)}>{pick ? <span className={owns(pick) ? "" : "opacity-40"}><DriftHex color={driftColor(pick, ctx.driftstones)} size={17} /></span> : "⬡"}</button>; })}
         </span> : null}
-        {row.item ? <button aria-label="升級明細" title="升級明細" onClick={() => onToggle(row.id)}
-          className={cx("flex-[0_0_32px] border-0 border-l border-[#eee6d4] bg-transparent cursor-pointer text-[14px] min-[621px]:text-[17px] hover:bg-[#f6efdf]", isOpen ? "text-[#099aa5]" : "text-[#8b938c]")}>
+        {row.item && !readOnly ? <button aria-label="升級明細" title="升級明細" onClick={() => onToggle(row.id)}
+          className={cx("flex-[0_0_32px] border-0 border-l border-[#eee6d4] bg-transparent cursor-pointer fs-lg hover:bg-[#f6efdf]", isOpen ? "text-[#099aa5]" : "text-[#8b938c]")}>
           <span className={cx("inline-block [transition:transform_.15s]", isOpen && "[transform:rotate(180deg)]")}>▾</span>
         </button> : null}
-        {row.item && isOpen ? <div className="flex-[0_0_100%] pt-2 px-3 pb-3 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7]">
+        {row.item && !readOnly && isOpen ? <div className="flex-[0_0_100%] pt-2 px-3 pb-3 [border-top:1px_dashed_#e8dfcb] bg-[#fffdf7]">
           {row.traits ? <><h4 className={h4(true)}>武器特性</h4><TraitDetail traits={row.traits} /></> : null}
           {row.entries.length || row.slotGrades.length ? <>{row.traits ? <h4 className={h4()}>技能解鎖</h4> : null}<SkillTiers entries={row.entries} slotGrades={row.slotGrades} /></> : null}
           <h4 className={h4()}>升級素材（單件）</h4>
@@ -936,20 +933,26 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
               : <GradeRangeCost compact allowNone rows={gradeRows} value={piece} targetForCurrent={(current) => automaticTarget(row.id, row.entries, current, Number(gradeRows[0].grade.split("-")[0]))}
                 onChange={(range) => onChange((next) => setPiece(next, row.id, { ...pieceOf(next, row.id, row.itemKey), ...range }))} />}
         </div> : null}
-        {row.item && !isOpen && build.showMissing ? <MissingMaterials rows={gradeRows} range={piece} waived={waived} /> : null}
+        {row.item && !readOnly && !isOpen && build.showMissing ? <MissingMaterials rows={gradeRows} range={piece} waived={waived} /> : null}
       </div>;
     })}
 
+    {readOnly ? null : (() => {
+      const progress = rows.reduce((sum, row) => { const one = driftProgress(build, row.id, ctx.forged, row.slotGrades.length); return { have: sum.have + one.have, total: sum.total + one.total }; }, { have: 0, total: 0 });
+      return progress.total ? <p className="m-0 px-1 flex flex-wrap items-center gap-x-2 fs-md text-[#5b635c]">
+        <span>漂流石完成度</span><b className={progress.have === progress.total ? "text-[#3e8e51]" : "text-[#e08a00]"}>{progress.have}／{progress.total}</b>
+        <span>{progress.have === progress.total ? "全部已練成" : `還有 ${progress.total - progress.have} 顆尚未練成`}</span></p> : null;
+    })()}
     {Object.keys(skills).length ? <section className="bg-[#fffaf0] border border-[#e3dac6] rounded-[10px] py-2.5 px-3">
       <div className="grid grid-cols-2 gap-x-5 gap-y-2">{Object.entries(skills).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hant")).map(([name, level]) => {
         const cap = ctx.skillLevels[name]?.length; const segments = cap ?? Math.max(BAR_SEGMENTS, level);
         return <button key={name} className="block w-full border-0 bg-transparent py-1 px-1.5 -my-1 -mx-1.5 box-content text-left cursor-pointer rounded-md hover:bg-[#f3ecdb]" onClick={() => onSkill(name, level)}>
-          <p className="flex justify-between items-baseline gap-1 mt-0 mx-0 mb-1 text-[13px] min-[621px]:text-[16px] text-[#2b332c]"><span className="min-w-0">{name}</span><b className={cx("text-[14px] min-[621px]:text-[17px]", cap !== undefined && level > cap ? "text-[#d23c3c]" : "text-[#e08a00]")}>{level}</b></p>
+          <p className="flex justify-between items-baseline gap-1 mt-0 mx-0 mb-1 fs-md text-[#2b332c]"><span className="min-w-0">{name}</span><b className={cx("fs-lg", cap !== undefined && level > cap ? "text-[#d23c3c]" : "text-[#e08a00]")}>{level}</b></p>
           <div className="flex items-center gap-1">
             <div className="flex-1 min-w-0 flex gap-[3px]">{Array.from({ length: segments }, (_, position) => <i key={position}
               className={cx("flex-[0_0_calc((100%_-_4*3px)/5)] h-2 [transform:skewX(-20deg)] rounded-[1px]", position < level ? "bg-[#f59a00]" : "bg-[#dcd6c8]")} />)}</div>
             {anyStone ? <span className="flex-none min-w-[22px] h-2 flex items-center justify-end gap-1 overflow-visible">
-              {Object.entries(stones[name] ?? {}).map(([color, count]) => <span key={color} title={`漂流石 ${count} 顆`} className="inline-flex items-center gap-px text-[10px] min-[621px]:text-[12px] font-bold leading-none text-[#5b635c]">
+              {Object.entries(stones[name] ?? {}).map(([color, count]) => <span key={color} title={`漂流石 ${count} 顆`} className="inline-flex items-center gap-px fs-sm font-bold leading-none text-[#5b635c]">
                 <DriftHex color={color} size={11} />{count > 1 ? count : null}
               </span>)}
             </span> : null}
@@ -957,8 +960,141 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         </button>;
       })}</div>
     </section> : <p className={cx(NOTE, "m-0 px-1")}>點上面的格子開始配裝：武器要選魔物與武器種類，防具選魔物即可。</p>}
+    {footer}
   </article>;
 }
+
+/**
+ * 我的裝備庫：所有設定過「目前階級」的裝備（階級是每件裝備共用的），每件列出目前階級、這個階級的技能與洞數，
+ * 以及哪幾組配裝穿著它、各自鑲了什麼漂流石。裝備是在「配裝」頁輸入目前階級後才會出現在這裡；這裡也能直接改階級。
+ */
+/**
+ * 裝備庫裡一件裝備的技能明細：
+ *  - 技能等級條：跟配裝畫面同一個樣子。實心＝目前階級已經有的等級，空心框＝升級後還會多出來的等級。
+ *  - 升級進度：每個階級解鎖了什麼；已經到的是正常顏色，還沒到的淡色並標「尚未」。
+ * major：目前階級的大階（5-5 是 5）；還沒設定階級是 0，等於什麼都還沒解鎖。
+ */
+function GearDetail({ entries, slotGrades, major, skillLevels, onSkill }: {
+  entries: SeriesSkill[]; slotGrades: number[]; major: number; skillLevels: Record<string, string[]>; onSkill: (name: string, level: number) => void;
+}) {
+  const now = skillsAtGrade(entries, major);
+  const top = skillsAtGrade(entries, MAX_GRADE);
+  const tiers = skillTiers(entries, slotGrades);
+  const names = Object.keys(top).sort((a, b) => (now[b] ?? 0) - (now[a] ?? 0) || top[b] - top[a] || a.localeCompare(b, "zh-Hant"));
+  const unlockedSlots = slotGrades.filter((grade) => grade <= major).length;
+  return <div className="flex flex-col gap-2">
+    {names.length ? <section className="bg-white border border-[#e3dac6] rounded-[10px] py-2 px-3">
+      <div className="grid grid-cols-1 gap-y-2">{names.map((name) => {
+        const level = now[name] ?? 0, max = top[name];
+        const segments = skillLevels[name]?.length ?? Math.max(BAR_SEGMENTS, max);
+        const further = entries.find((entry) => entry.skill === name)?.levels.filter((item) => item.grade > major).sort((a, b) => a.grade - b.grade)[0];
+        return <button key={name} onClick={() => onSkill(name, level || max)} className="block w-full border-0 bg-transparent py-1 px-1.5 -my-1 -mx-1.5 box-content text-left cursor-pointer rounded-md hover:bg-[#f3ecdb]">
+          <p className="flex justify-between items-baseline gap-2 mt-0 mx-0 mb-1 fs-sm text-[#2b332c]">
+            <span className={cx("min-w-0", !level && "text-[#8b938c]")}>{name}</span>
+            <span className="shrink-0 whitespace-nowrap"><b className={cx("fs-md", level ? "text-[#e08a00]" : "text-[#a4aaa4]")}>{level}</b>
+              {further ? <span className="ml-1 text-[#8b938c]">→{further.level}（{further.grade}-1）</span> : null}</span></p>
+          <div className="flex gap-[3px]">{Array.from({ length: segments }, (_, position) => <i key={position}
+            className={cx("flex-[0_0_calc((100%_-_4*3px)/5)] h-2 [transform:skewX(-20deg)] rounded-[1px]",
+              position < level ? "bg-[#f59a00]" : position < max ? "bg-[#fdf0d5] border border-dashed border-[#f0b64a]" : "bg-[#dcd6c8]")} />)}</div>
+        </button>;
+      })}</div>
+    </section> : <p className={cx(NOTE, "m-0")}>這件裝備沒有技能。</p>}
+    {tiers.length ? <div>
+      <p className="m-0 mb-1 fs-sm font-bold text-[#6d756e]">升級進度{slotGrades.length ? <small className="ml-1.5 font-normal text-[#8b938c]">鑲嵌槽 {unlockedSlots}／{slotGrades.length}</small> : null}</p>
+      {tiers.map((tier) => { const reached = tier.grade <= major;
+        return <p key={tier.grade} className={cx("flex items-baseline gap-2 m-0 py-px fs-sm leading-[1.6]", reached ? "text-[#39423a]" : "text-[#8b938c]")}>
+          <b className={cx("flex-[0_0_auto] min-w-[3.4em] whitespace-nowrap font-semibold", reached ? "text-[#3e8e51]" : "text-[#a4aaa4]")}>{tier.grade}-1</b>
+          <span className="min-w-0 flex-1">
+            {tier.changes.map((change) => <em key={change.name} className="block not-italic">{change.name}
+              <span className={cx("ml-1.5 font-semibold", reached ? "text-[#3e8e51]" : "text-[#a4aaa4]")}>{tier.first ? `Lv${change.to}` : `${change.from}→${change.to}`}</span></em>)}
+            {tier.slots ? <em className="block not-italic">{"⬡".repeat(tier.slots)} 鑲嵌槽 +{tier.slots}</em> : null}
+          </span>
+          {reached ? null : <small className="ml-auto shrink-0 text-[#a4aaa4]">尚未</small>}
+        </p>; })}
+    </div> : null}
+  </div>;
+}
+
+function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotName, onGrade, onForge, onSkill }: {
+  owned: Record<string, string>; forged: Record<string, string[]>; builds: Build[]; seriesBy: Record<string, Series>; ctx: CardContext;
+  weaponTypeName: (type: string) => string; slotName: (slot: ArmorSlot) => string;
+  onGrade: (id: string, grade: string) => void; onForge: (id: string, skill: string, on: boolean) => void; onSkill: (name: string, level: number) => void;
+}) {
+  const order = ["weapon", ...ARMOR_SLOTS];
+  const [adding, setAdding] = useState<string | null>(null);
+  // 有設定階級、或有練成過漂流石的裝備都列出來。
+  const entries = [...new Set([...Object.keys(owned), ...Object.keys(forged)])].flatMap((id) => {
+    const current = owned[id] ?? "unforged";
+    if (current === "unforged" && !(forged[id]?.length)) return [];
+    const cut = id.indexOf("|");
+    const slot = id.slice(0, cut), itemKey = id.slice(cut + 1);
+    if (!order.includes(slot)) return [];
+    const pseudo: Build = { id: "", name: "", gear: slot === "weapon" ? { weapon: itemKey } : { [slot]: itemKey.split("::")[0] }, drifts: {}, pieces: {}, showMissing: false };
+    const row = gearRowsOf(pseudo, seriesBy, weaponTypeName, slotName).find((candidate) => candidate.id === slot);
+    if (!row?.item) return [];
+    const users = builds.flatMap((build) => itemKeyOf(build, slot) === itemKey ? [{ build, drifts: (build.drifts[slot] ?? []).slice(0, row.slotGrades.length).filter((pick): pick is DriftPick => !!pick) }] : []);
+    return [{ id, slot, itemKey, current, row, users, learned: forged[id] ?? [] }];
+  }).sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot) || gradeValue(b.current) - gradeValue(a.current) || a.row.title.localeCompare(b.row.title, "zh-Hant"));
+  if (!entries.length) return <p className={NOTE}>還沒有裝備。到「配裝」頁幫裝備輸入「目前階級」，就會出現在這裡；同一件裝備在每組配裝都是同一個階級，漂流石也記在裝備上。</p>;
+  return <div className="flex flex-col gap-4">{order.map((slot) => {
+    const group = entries.filter((entry) => entry.slot === slot);
+    if (!group.length) return null;
+    return <section key={slot} aria-label={slot === "weapon" ? "武器" : slotName(slot as ArmorSlot)}>
+      <h3 className="m-0 mb-2 pb-1 border-b border-[#d9ddd6] fs-lg text-[#39423a]">{slot === "weapon" ? "武器" : slotName(slot as ArmorSlot)} <small className="font-normal text-[#8b938c]">{group.length}</small></h3>
+      <div className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] items-start">{group.map(({ id, current, row, users, learned }) => {
+        const major = Number(current.split("-")[0]);
+        const armor = slot !== "weapon";
+        return <article key={id} className="min-w-0 flex flex-col gap-1.5 p-2 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
+          <div className="flex items-center gap-2">
+            {ctx.icons[row.item!.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item!.key])})` }} /> : null}
+            <strong className="flex-1 min-w-0 truncate fs-lg text-[#2b332c]" title={row.title}>{row.title}</strong>
+            <CurrentGradeInput value={current} title={row.title} onCommit={(grade) => onGrade(id, grade)} />
+          </div>
+          <GearDetail entries={row.entries} slotGrades={row.slotGrades} major={Number.isFinite(major) ? major : 0} skillLevels={ctx.skillLevels} onSkill={onSkill} />
+          {armor ? <div className="pt-1.5 border-t border-dashed border-[#e8dfcb] flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="fs-sm font-bold text-[#39423a]">已練成漂流石 <small className="font-normal text-[#8b938c]">{learned.length}</small></span>
+              {learned.map((skill) => <button key={skill} title="點一下取消「已練成」" onClick={() => onForge(id, skill, false)}
+                className="inline-flex items-center gap-1 py-0.5 px-2 border border-[#bfe1de] rounded-full bg-[#eef8f7] fs-sm text-[#1f4f4c] cursor-pointer">
+                <DriftHex color={driftColor({ skill, color: "" }, ctx.driftstones)} size={12} />{skill}<span aria-hidden="true" className="text-[#8b938c]">✕</span></button>)}
+              {ctx.driftstones ? <button aria-label="新增已練成的漂流石" title="新增已練成的漂流石" onClick={() => setAdding(id)}
+                className="py-0.5 px-2.5 border border-dashed border-[#b5bbb5] rounded-full bg-transparent fs-sm text-[#5b635c] cursor-pointer hover:bg-[#ece8dc]">＋</button> : null}
+            </div>
+            {users.length ? users.map(({ build, drifts }) => {
+              const done = drifts.filter((pick) => learned.includes(pick.skill)).length;
+              return <div key={build.id} className="flex flex-col gap-0.5">
+                <p className="m-0 flex flex-wrap items-baseline gap-x-2 fs-md text-[#39423a]"><b>{build.name || "未命名"}</b>
+                  {drifts.length ? <span className={done === drifts.length ? "text-[#3e8e51]" : "text-[#e08a00]"}>{done}／{drifts.length} 已練成</span> : <span className="text-[#8b938c]">沒鑲漂流石</span>}</p>
+                {drifts.length ? <div className="flex flex-wrap gap-1">{drifts.map((pick, position) => { const have = learned.includes(pick.skill);
+                  return <button key={position} aria-pressed={have} title={have ? "已練成（點一下改成尚未）" : "尚未練成（點一下標記為已練成）"} onClick={() => onForge(id, pick.skill, !have)}
+                    className={cx("inline-flex items-center gap-1 py-0.5 px-2 rounded-md border fs-md cursor-pointer", have ? "border-[#bfe1de] bg-[#eef8f7] text-[#1f4f4c]" : "border-dashed border-[#e0b46a] bg-white text-[#8a6a2a]")}>
+                    <span className={have ? "" : "opacity-45"}><DriftHex color={driftColor(pick, ctx.driftstones)} size={12} /></span>{pick.skill}<em className="not-italic fs-sm">{have ? "已有" : "尚未"}</em></button>; })}</div> : null}
+              </div>; })
+              : <p className="m-0 fs-md text-[#8b938c]">目前沒有配裝穿著它</p>}
+          </div> : <div className="pt-1.5 border-t border-dashed border-[#e8dfcb]">
+            {users.length ? <p className="m-0 fs-md text-[#39423a]">使用中：{users.map(({ build }) => build.name || "未命名").join("、")}</p> : <p className="m-0 fs-md text-[#8b938c]">目前沒有配裝穿著它</p>}
+          </div>}
+        </article>;
+      })}</div>
+    </section>;
+  })}
+    {adding && ctx.driftstones ? (() => {
+      const learned = forged[adding] ?? [];
+      const title = entries.find((entry) => entry.id === adding)?.row.title ?? "";
+      return <Modal title={`新增已練成的漂流石 · ${title}`} narrow onClose={() => setAdding(null)}>
+        <div className="mb-3 p-2 rounded-lg bg-[#f6fbfb] border border-[#bfe1de]">
+          <p className="m-0 mb-1.5 fs-md font-bold text-[#1f4f4c]">已練成 {learned.length}（點一下取消）</p>
+          {learned.length ? <div className="flex flex-wrap gap-1">{learned.map((skill) => <button key={skill} onClick={() => onForge(adding, skill, false)}
+            className="inline-flex items-center gap-1 py-0.5 px-2 border border-[#bfe1de] rounded-full bg-white fs-md text-[#1f4f4c] cursor-pointer">
+            <DriftHex color={driftColor({ skill, color: "" }, ctx.driftstones)} size={12} />{skill}<span aria-hidden="true" className="text-[#8b938c]">✕</span></button>)}</div>
+            : <p className={cx(NOTE, "m-0")}>還沒有。在下面點技能就會加進來。</p>}
+        </div>
+        <DriftstonePicker data={ctx.driftstones} current={null} onPick={(pick) => { if (pick) onForge(adding, pick.skill, true); }} />
+      </Modal>;
+    })() : null}
+  </div>;
+}
+
 
 /** Each weapon type must use its own skills, including overrides. */
 function traitSearchText(traits?: WeaponTraits): string {
@@ -1018,7 +1154,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
     weaponGroups.set(key, group);
   }
   const monsterIcon = (key: string) => <span title={series.find((item) => item.key === key)?.name}
-    aria-hidden="true" className={cx("block shrink-0 w-9 h-9", BG_ICON)}
+    aria-hidden="true" className={cx("block shrink-0 w-[var(--ic)] h-[var(--ic)]", BG_ICON)}
     style={icons[key] ? { backgroundImage: `url(${assetPath(icons[key])})` } : undefined}>{icons[key] ? null : "◇"}</span>;
   const gearCard = (gear: (typeof matches)[number]) => {
     const selected = build.gear[gear.slot] === gear.key;
@@ -1030,12 +1166,12 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
       title={gear.title} onClick={() => onPick(gear.slot, gear.key)}
       className={cx("relative flex items-center gap-1.5 w-fit max-w-full min-h-11 px-2 py-1.5 text-left rounded-lg border cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#099aa5]", selected ? "border-[#099aa5] bg-[#eaf7f4] ring-1 ring-inset ring-[#099aa5]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#a89b7e]")}>
       {gear.slot !== "weapon" ? monsterIcon(gear.key) : null}
-      <span aria-hidden="true" className={cx("shrink-0 w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icon)})` }} />
-      <span className="min-w-0 text-[12px] leading-4 text-[#5b635c]">{skills.map(([name, level]) =>
+      <span aria-hidden="true" className={cx("shrink-0 w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icon)})` }} />
+      <span className="min-w-0 fs-md leading-4 text-[#5b635c]">{skills.map(([name, level]) =>
         <span key={name} className={cx("block break-words", chosen.includes(name) && "font-bold text-[#28352e]")}>{name} {level}</span>)}
         {gear.traits ? <span className="block mt-1 pt-1 border-t border-[#e3dac6]"><TraitDetail traits={gear.traits} /></span> : null}
       </span>
-      {selected ? <span aria-hidden="true" className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#099aa5] text-white text-[10px]">✓</span> : null}
+      {selected ? <span aria-hidden="true" className="absolute -top-1 -right-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#099aa5] text-white fs-sm">✓</span> : null}
     </button>;
   };
   const terms = searchTerms(query);
@@ -1044,11 +1180,11 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
     <div className="h-full flex flex-col gap-2">
     <section className={cx("flex flex-col min-h-0 border border-[#e3dac6] rounded-lg", open && !search ? "flex-1" : "shrink-0")}>
       <div className="shrink-0 flex items-center gap-2 bg-[#fffaf0] rounded-lg">
-        <button aria-expanded={open} onClick={() => setOpen(!open)} className="flex-1 min-w-0 flex items-center justify-between gap-2 p-2 border-0 bg-transparent text-[13px] font-bold text-left cursor-pointer">
+        <button aria-expanded={open} onClick={() => setOpen(!open)} className="flex-1 min-w-0 flex items-center justify-between gap-2 p-2 border-0 bg-transparent fs-md font-bold text-left cursor-pointer">
           <span className="truncate">技能{chosen.length ? `：${chosen.join("、")}` : ""}</span>
           <span className={cx("inline-block [transition:transform_.15s]", open && "[transform:rotate(180deg)]")}>▾</span>
         </button>
-        {chosen.length ? <button onClick={() => setChosen([])} className="shrink-0 mr-2 border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline">清除</button> : null}
+        {chosen.length ? <button onClick={() => setChosen([])} className="shrink-0 mr-2 border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer hover:underline">清除</button> : null}
       </div>
       {open ? <div className="flex flex-col min-h-0 p-2 gap-2">
         <input aria-label="搜尋魔物、裝備、技能或武器特色" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋魔物、技能或武器特色；多個關鍵字用空白或逗號隔開，例如：粉塵 擴散" className="block w-full box-border p-2 border border-[#d8d0bd] rounded-md shrink-0" />
@@ -1057,26 +1193,26 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
         <div role="group" aria-label="搜尋範圍與武器種類" className="flex flex-wrap gap-1 shrink-0">
           {([["all", "全"], ["weapon", "找武器"], ["armor", "找防具"]] as const).map(([value, label]) => { const on = scope === value; return <button key={value} aria-pressed={on}
             onClick={() => { setScope(value); if (value !== "weapon") setWeaponFilter([]); }}
-            className={cx("h-9 min-w-9 px-2 rounded border flex items-center justify-center text-[12px] font-bold cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900] text-[#2b332c]" : "border-[#e3e6e1] bg-white text-[#5b635c]")}>{label}</button>; })}
+            className={cx("h-9 min-w-9 px-2 rounded border flex items-center justify-center fs-md font-bold cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900] text-[#2b332c]" : "border-[#e3e6e1] bg-white text-[#5b635c]")}>{label}</button>; })}
           {Object.entries(WEAPON_NAMES).map(([type, name]) => { const on = weaponFilter.includes(type); return <button key={type} aria-pressed={on} aria-label={name} title={name}
             onClick={() => { setWeaponFilter(toggle(weaponFilter, type)); if (scope === "armor") setScope("weapon"); }}
-            className={cx("rounded border w-9 h-9 flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-            <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /></button>; })}
+            className={cx("rounded border w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+            <span aria-hidden="true" className={cx("block w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /></button>; })}
         </div>
         <div className={cx("overflow-auto min-h-0", search && "max-h-[20cqh]")} role="group" aria-label="技能選擇（可複選）">
           <SkillGroups names={filtered} searching={terms.length > 0} renderSkill={(name) => { const on = chosen.includes(name); return <button key={name} aria-pressed={on} onClick={() => { setChosen(toggle(chosen, name)); setQuery(""); }}
-            className={cx(SKILL_CELL, "py-1 px-2 rounded-md border text-[12px] cursor-pointer", on ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>; }} />
+            className={cx(SKILL_CELL, "py-1 px-2 rounded-md border fs-md cursor-pointer", on ? "bg-[#099aa5] text-white border-[#099aa5]" : "bg-white border-[#d8d0bd]")}>{name}</button>; }} />
         </div>
       </div> : null}
     </section>
     {search ? <div className="flex-1 min-h-0 overflow-auto">
-      <p className="text-[13px] font-bold mt-0">{search} · {matches.length} 件裝備</p>
+      <p className="fs-md font-bold mt-0">{search} · {matches.length} 件裝備</p>
       {scope !== "armor" ? <section className="my-2">
         <button aria-expanded={weaponsOpen} onClick={() => setWeaponsOpen(!weaponsOpen)}
-          className="flex items-center justify-between gap-2 w-full mb-2 py-1.5 px-2.5 rounded-lg border border-[#bfe1de] bg-[#eef8f7] text-[14px] font-bold text-left text-[#1f4f4c] cursor-pointer hover:bg-[#e2f3f1]">
-          <span>武器 <small className="font-normal text-[12px] text-[#5b7a77]">{weaponGroups.size} 隻魔物・{matches.filter((gear) => gear.slot === "weapon").length} 件</small></span>
-          <span className="flex items-center gap-1.5 shrink-0 font-normal text-[12px] text-[#087b84]">{weaponsOpen ? "點擊即可收合" : "點擊即可展開"}
-            <span aria-hidden="true" className={cx("inline-block text-[14px] [transition:transform_.15s]", weaponsOpen && "[transform:rotate(180deg)]")}>▾</span></span>
+          className="flex items-center justify-between gap-2 w-full mb-2 py-1.5 px-2.5 rounded-lg border border-[#bfe1de] bg-[#eef8f7] fs-lg font-bold text-left text-[#1f4f4c] cursor-pointer hover:bg-[#e2f3f1]">
+          <span>武器 <small className="font-normal fs-md text-[#5b7a77]">{weaponGroups.size} 隻魔物・{matches.filter((gear) => gear.slot === "weapon").length} 件</small></span>
+          <span className="flex items-center gap-1.5 shrink-0 font-normal fs-md text-[#087b84]">{weaponsOpen ? "點擊即可收合" : "點擊即可展開"}
+            <span aria-hidden="true" className={cx("inline-block fs-lg [transition:transform_.15s]", weaponsOpen && "[transform:rotate(180deg)]")}>▾</span></span>
         </button>
         {weaponsOpen ? <>
           <div className="flex flex-col gap-2">{[...weaponGroups].map(([key, gears]) =>
@@ -1088,7 +1224,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
         </> : null}
       </section> : null}
       {scope !== "weapon" ? ARMOR_SLOTS.map((slot) => <section key={slot} className="my-2">
-        <h3 className="text-[14px] mt-0 mb-2">{SLOT_NAMES[slot]}</h3>
+        <h3 className="fs-lg mt-0 mb-2">{SLOT_NAMES[slot]}</h3>
         <div className="flex flex-wrap gap-1.5 p-1">{matches.filter((gear) => gear.slot === slot).map(gearCard)}</div>
         {!matches.some((gear) => gear.slot === slot) ? <p className={NOTE}>此部位沒有這個技能的裝備。</p> : null}
       </section>) : null}
@@ -1112,11 +1248,11 @@ function PlannedGradeInput({ label, caption, value, empty, rows, current, onComm
     setInvalid(false);
     if (next !== value) onCommit(next);
   };
-  return <label className="min-w-0 text-[9px] text-[#858d86]"><span className="sr-only">{caption}</span><input aria-label={label} aria-invalid={invalid} disabled={!rows?.length} value={draft} placeholder={empty ? "未製作" : "不升級"}
+  return <label className="min-w-0 fs-sm text-[#858d86]"><span className="sr-only">{caption}</span><input aria-label={label} aria-invalid={invalid} disabled={!rows?.length} value={draft} placeholder={empty ? "未製作" : "不升級"}
     title={invalid ? "請輸入有效階級，例如 6-1；目標須高於目前階級" : label}
     onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit}
     onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setDraft(value === empty ? "" : value); setInvalid(false); } }}
-    className={cx("block w-full min-w-0 h-[19px] box-border px-1 py-0 text-center text-[11px] tabular-nums rounded border bg-white/80 text-[#28352e] outline-none focus:outline-none focus:ring-0 focus:shadow-none transition-colors placeholder:text-[#93998f] disabled:opacity-50", invalid ? "border-red-500" : "border-[#e3dfd2] hover:border-[#b7c5bc] focus:border-[#829c8c] focus:bg-white")} /></label>;
+    className={cx("block w-full min-w-0 h-[19px] box-border px-1 py-0 text-center fs-sm tabular-nums rounded border bg-white/80 text-[#28352e] outline-none focus:outline-none focus:ring-0 focus:shadow-none transition-colors placeholder:text-[#93998f] disabled:opacity-50", invalid ? "border-red-500" : "border-[#e3dfd2] hover:border-[#b7c5bc] focus:border-[#829c8c] focus:bg-white")} /></label>;
 }
 
 function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, ready, storageError }: {
@@ -1147,8 +1283,8 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
   const seen = new Set<string>();
   const candidates = [...monsterGear, ...searchGear].filter((plan) => { const id = plannedGearId(plan); if (seen.has(id)) return false; seen.add(id); return true; });
   const titleOf = (plan: PlannedGear) => `${series.find((item) => item.key === plan.series)?.name ?? plan.series}・${plan.slot === "weapon" ? WEAPON_NAMES[plan.weaponType ?? ""] ?? plan.weaponType : SLOT_NAMES[plan.slot]}`;
-  const icon = (plan: PlannedGear) => <span aria-hidden="true" className={cx("block shrink-0 w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(plan.slot === "weapon" ? WEAPON_ICON[plan.weaponType ?? ""] : ARMOR_ICON[plan.slot])})` }} />;
-  const skills = (plan: PlannedGear) => <span className="block text-[11px] text-[#566154] leading-[1.5]">{Object.entries(skillsAtGrade(entriesFor(plan), MAX_GRADE)).map(([name, level]) => <span key={name} className="block">{name} <b className="font-semibold text-[#957039] tabular-nums">{level}</b></span>)}{!entriesFor(plan).length ? "無技能" : null}{plan.slot !== "weapon" ? <span className="block mt-0.5 text-[10px] text-[#929c8d]" title="漂流石洞位">◇ {series.find((item) => item.key === plan.series)?.slots?.[plan.slot]?.length ?? 0}</span> : null}</span>;
+  const icon = (plan: PlannedGear, size = "w-6 h-6") => <span aria-hidden="true" className={cx("block shrink-0", size, BG_ICON)} style={{ backgroundImage: `url(${assetPath(plan.slot === "weapon" ? WEAPON_ICON[plan.weaponType ?? ""] : ARMOR_ICON[plan.slot])})` }} />;
+  const skills = (plan: PlannedGear) => <span className="block fs-sm text-[#566154] leading-[1.5]">{Object.entries(skillsAtGrade(entriesFor(plan), MAX_GRADE)).map(([name, level]) => <span key={name} className="block">{name} <b className="font-semibold text-[#957039] tabular-nums">{level}</b></span>)}{!entriesFor(plan).length ? "無技能" : null}{plan.slot !== "weapon" ? <span className="block mt-0.5 fs-sm text-[#929c8d]" title="漂流石洞位">◇ {series.find((item) => item.key === plan.series)?.slots?.[plan.slot]?.length ?? 0}</span> : null}</span>;
   const update = (plan: PlannedGear, range: GradeRange) => onChange(plans.map((entry) => plannedGearId(entry) === plannedGearId(plan) ? { ...entry, ...range } : entry));
   const renderRow = (plan: PlannedGear) => {
     const id = plannedGearId(plan);
@@ -1170,13 +1306,13 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
           onCommit={(target) => update(plan, { current: plan.current, target })} />
         </div>
       </div>
-      <div className={cx("relative pointer-events-none min-w-0 flex-1 break-words", plan.slot !== "weapon" && "mt-0.5 mb-1.5")}>{plan.slot === "weapon" ? <strong className="block text-[12px] font-semibold text-[#40543d] mb-0.5">{titleOf(plan)}</strong> : null}{skills(plan)}
-        {waived ? <span className="inline-block mt-1 rounded px-1 bg-[#e4f1e9] text-[9px] text-[#4d7b62]">素材減免</span> : null}
+      <div className={cx("relative pointer-events-none min-w-0 flex-1 break-words", plan.slot !== "weapon" && "mt-0.5 mb-1.5")}>{plan.slot === "weapon" ? <strong className="block fs-md font-semibold text-[#40543d] mb-0.5">{titleOf(plan)}</strong> : null}{skills(plan)}
+        {waived ? <span className="inline-block mt-1 rounded px-1 bg-[#e4f1e9] fs-sm text-[#4d7b62]">素材減免</span> : null}
       </div>
-      <label className={cx("relative flex w-fit shrink-0 items-center gap-1 text-[9px] text-[#73816f] cursor-pointer", plan.slot === "weapon" ? "flex-col sm:flex-row" : "pt-1 border-t border-[#e9ece2] pr-2")} title="納入全部素材統計">
+      <label className={cx("relative flex w-fit shrink-0 items-center gap-1 fs-sm text-[#73816f] cursor-pointer", plan.slot === "weapon" ? "flex-col sm:flex-row" : "pt-1 border-t border-[#e9ece2] pr-2")} title="納入全部素材統計">
         <input type="checkbox" className="m-0 w-3 h-3 accent-[#648b72]" checked={plan.included !== false} onChange={(event) => onChange(plans.map((entry) => plannedGearId(entry) === id ? { ...entry, included: event.target.checked } : entry))} />納入統計
       </label>
-      <button aria-label={`移除${titleOf(plan)}`} title="移除裝備" onClick={() => onChange(plans.filter((entry) => plannedGearId(entry) !== id))} className="absolute bottom-0.5 right-0.5 w-5 h-5 rounded border-0 bg-transparent text-[10px] text-[#a3a89e] hover:bg-[#fbe9e3] hover:text-[#b15d4b] cursor-pointer">✕</button>
+      <button aria-label={`移除${titleOf(plan)}`} title="移除裝備" onClick={() => onChange(plans.filter((entry) => plannedGearId(entry) !== id))} className="absolute bottom-0.5 right-0.5 w-5 h-5 rounded border-0 bg-transparent fs-sm text-[#a3a89e] hover:bg-[#fbe9e3] hover:text-[#b15d4b] cursor-pointer">✕</button>
     </div>;
   };
   const armorKeys = [...new Set(plans.filter((plan) => plan.slot !== "weapon").map((plan) => plan.series))];
@@ -1197,42 +1333,42 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
   return <section style={{ "--plan-card-height": `${cardHeight}px` } as React.CSSProperties} className="col-span-full justify-self-start box-border w-full max-w-[340px] min-[724px]:max-w-[692px] min-w-0 rounded-2xl p-3 border border-[#d8dfcf] bg-[linear-gradient(135deg,#f5f6ef,#edf1e7)] shadow-[0_2px_8px_rgba(40,56,35,.04)]">
     <div className="flex flex-wrap items-center gap-2 pb-2.5 mb-2.5 border-b border-[#dce3d4]">
       <span aria-hidden="true" className="w-1 h-5 rounded-full bg-[#68836a]" />
-      <h2 className="text-[14px] font-semibold tracking-wide text-[#344a38] m-0">待製作裝備</h2>
-      <span className="rounded-full bg-[#e2e9da] px-2 py-0.5 text-[10px] font-semibold text-[#657a5d] tabular-nums">{plans.length} 件</span>
-      <label className={cx("ml-auto text-[11px] flex items-center gap-1.5 rounded-full border px-2.5 py-1 cursor-pointer transition-colors", included ? "border-[#cfddca] bg-[#e8f0e2] text-[#53704c]" : "border-[#dce1d5] bg-white/60 text-[#939b8b]")}><input type="checkbox" className="m-0 w-3 h-3 accent-[#648b72]" checked={included} onChange={(event) => onIncluded(event.target.checked)} />納入素材總統計</label>
+      <h2 className="fs-lg font-semibold tracking-wide text-[#344a38] m-0">待製作裝備</h2>
+      <span className="rounded-full bg-[#e2e9da] px-2 py-0.5 fs-sm font-semibold text-[#657a5d] tabular-nums">{plans.length} 件</span>
+      <label className={cx("ml-auto fs-sm flex items-center gap-1.5 rounded-full border px-2.5 py-1 cursor-pointer transition-colors", included ? "border-[#cfddca] bg-[#e8f0e2] text-[#53704c]" : "border-[#dce1d5] bg-white/60 text-[#939b8b]")}><input type="checkbox" className="m-0 w-3 h-3 accent-[#648b72]" checked={included} onChange={(event) => onIncluded(event.target.checked)} />納入素材總統計</label>
     </div>
-    <section className="mb-3"><h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-[#687a5f] m-0 mb-1.5">武器<span className="text-[10px] font-normal text-[#9aa58e]">{plans.filter((plan) => plan.slot === "weapon").length}</span></h3>
+    <section className="mb-3"><h3 className="flex items-center gap-1.5 fs-sm font-semibold text-[#687a5f] m-0 mb-1.5">武器<span className="fs-sm font-normal text-[#9aa58e]">{plans.filter((plan) => plan.slot === "weapon").length}</span></h3>
       <div className="flex flex-col gap-1.5 w-full max-w-[692px]">
         {plans.filter((plan) => plan.slot === "weapon").map(renderRow)}
-        <button disabled={!ready} onClick={() => openPicker("weapon")} className="w-full max-w-[692px] min-h-10 box-border px-3 py-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-[#c5d0bd] bg-white/30 text-[10px] text-[#88977b] hover:bg-white/80 hover:border-[#91a781] hover:text-[#526e48] transition-colors cursor-pointer"><span aria-hidden="true" className="text-xl font-light leading-5">＋</span>武器</button>
+        <button disabled={!ready} onClick={() => openPicker("weapon")} className="w-full max-w-[692px] min-h-10 box-border px-3 py-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-[#c5d0bd] bg-white/30 fs-sm text-[#88977b] hover:bg-white/80 hover:border-[#91a781] hover:text-[#526e48] transition-colors cursor-pointer"><span aria-hidden="true" className="text-xl font-light leading-5">＋</span>武器</button>
       </div>
     </section>
-    <section><h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-[#687a5f] m-0 mb-1.5">防具<span className="text-[10px] font-normal text-[#9aa58e]">{plans.filter((plan) => plan.slot !== "weapon").length}</span></h3>
+    <section><h3 className="flex items-center gap-1.5 fs-sm font-semibold text-[#687a5f] m-0 mb-1.5">防具<span className="fs-sm font-normal text-[#9aa58e]">{plans.filter((plan) => plan.slot !== "weapon").length}</span></h3>
       <div className="flex flex-wrap items-start gap-1.5">
         {armorKeys.map((key) => <div key={key} className="w-fit max-w-full min-w-0 rounded-xl border border-[#dfe5d7] p-1.5 bg-white/75 shadow-[0_1px_2px_rgba(48,63,39,.03)]">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#526353] mb-1.5 pb-1 border-b border-[#edf0e7]"><span className={cx("block w-6 h-6", BG_ICON)} style={ctx.icons[key] ? { backgroundImage: `url(${assetPath(ctx.icons[key])})` } : undefined} />{series.find((item) => item.key === key)?.name ?? key}
-            <button onClick={() => setMaterialMonster(key)} className="ml-auto border border-[#e0e7d8] rounded-full bg-[#f2f6ed] text-[#627b55] px-2 py-0.5 text-[10px] hover:bg-[#e5eddc] hover:border-[#bacaad] transition-colors cursor-pointer">全部素材</button>
+          <div className="flex items-center gap-1.5 fs-sm font-semibold text-[#526353] mb-1.5 pb-1 border-b border-[#edf0e7]"><span className={cx("block w-6 h-6", BG_ICON)} style={ctx.icons[key] ? { backgroundImage: `url(${assetPath(ctx.icons[key])})` } : undefined} />{series.find((item) => item.key === key)?.name ?? key}
+            <button onClick={() => setMaterialMonster(key)} className="ml-auto border border-[#e0e7d8] rounded-full bg-[#f2f6ed] text-[#627b55] px-2 py-0.5 fs-sm hover:bg-[#e5eddc] hover:border-[#bacaad] transition-colors cursor-pointer">全部素材</button>
           </div>
           <div className="overflow-x-auto"><div className="grid grid-cols-[repeat(5,132px)] gap-1 w-max items-start">
             {ARMOR_SLOTS.map((slot) => {
               const plan = plans.find((entry) => entry.series === key && entry.slot === slot);
-              return plan ? renderRow(plan) : <button key={slot} disabled={!ready} aria-label={`加入${series.find((item) => item.key === key)?.name ?? key}${SLOT_NAMES[slot]}`} onClick={() => addArmor(key, slot)} className="h-[var(--plan-card-height)] box-border p-2 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#d7ded4] bg-[#f8faf6] text-[10px] text-[#99a293] hover:border-[#9aaf9f] hover:bg-[#eef4eb] transition-colors cursor-pointer">
+              return plan ? renderRow(plan) : <button key={slot} disabled={!ready} aria-label={`加入${series.find((item) => item.key === key)?.name ?? key}${SLOT_NAMES[slot]}`} onClick={() => addArmor(key, slot)} className="h-[var(--plan-card-height)] box-border p-2 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#d7ded4] bg-[#f8faf6] fs-sm text-[#99a293] hover:border-[#9aaf9f] hover:bg-[#eef4eb] transition-colors cursor-pointer">
                 <span className={cx("block w-5 h-5 opacity-40", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ARMOR_ICON[slot])})` }} />＋ {SLOT_NAMES[slot]}
               </button>;
             })}
           </div></div>
         </div>)}
         <div className="basis-full h-0" aria-hidden="true" />
-        <button disabled={!ready} onClick={() => openPicker("armor")} className="w-full max-w-[692px] min-h-10 box-border px-3 py-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-[#c5d0bd] bg-white/30 text-[10px] text-[#88977b] hover:bg-white/80 hover:border-[#91a781] hover:text-[#526e48] transition-colors cursor-pointer"><span aria-hidden="true" className="text-xl font-light leading-5">＋</span>魔物防具</button>
+        <button disabled={!ready} onClick={() => openPicker("armor")} className="w-full max-w-[692px] min-h-10 box-border px-3 py-2 flex items-center justify-center gap-1 rounded-lg border border-dashed border-[#c5d0bd] bg-white/30 fs-sm text-[#88977b] hover:bg-white/80 hover:border-[#91a781] hover:text-[#526e48] transition-colors cursor-pointer"><span aria-hidden="true" className="text-xl font-light leading-5">＋</span>魔物防具</button>
       </div>
     </section>
     {plans.filter((plan) => expanded[plannedGearId(plan)]).map((plan) => <Modal key={plannedGearId(plan)} title={`${titleOf(plan)} · 詳細內容`} onClose={() => setExpanded({})}><div id={`planned-detail-${plannedGearId(plan)}`}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div><h4 className="text-[11px] text-[#7b887c] mt-0 mb-1">技能與洞位變化</h4>
+        <div><h4 className="fs-sm text-[#7b887c] mt-0 mb-1">技能與洞位變化</h4>
           <SkillTiers entries={entriesFor(plan)} slotGrades={plan.slot === "weapon" ? [] : series.find((item) => item.key === plan.series)?.slots?.[plan.slot]} />
           {plan.slot === "weapon" && series.find((item) => item.key === plan.series)?.traits[plan.weaponType!] ? <div className="mt-2"><TraitDetail traits={series.find((item) => item.key === plan.series)!.traits[plan.weaponType!]} /></div> : null}
         </div>
-        <div><h4 className="text-[11px] text-[#7b887c] mt-0 mb-1">升級素材 · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4>
+        <div><h4 className="fs-sm text-[#7b887c] mt-0 mb-1">升級素材 · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4>
       <MissingMaterials rows={ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor")} range={plan} waived={plan.slot === "weapon" && ctx.discounted.includes(plan.series)} />
         </div>
       </div>
@@ -1245,26 +1381,26 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
         const failed = pieces.some((piece) => piece.rows?.length === 0);
         const total = totalMissing(pieces.flatMap((piece) => piece.rows?.length ? [{ ...piece, rows: piece.rows }] : []));
         return <>
-          <h3 className="text-[13px] mt-0">合併需求 · {total.pieces} 件 · Zenny {total.zenny.toLocaleString()}</h3>
+          <h3 className="fs-md mt-0">合併需求 · {total.pieces} 件 · Zenny {total.zenny.toLocaleString()}</h3>
           <p className={NOTE}>此處列出這隻魔物所有待製作裝備；各件的勾選只控制是否納入頁面上的素材總統計。</p>
           {pending || failed ? <p role="status" className={NOTE}>{pending ? "部分資料載入中，合計尚未完整。" : "部分升級資料無法取得，合計尚未完整。"}</p> : null}
-          <div className="grid gap-1 sm:grid-cols-2">{total.materials.map((item) => <div key={item.name} className="flex justify-between gap-2 text-[12px] bg-[#f4f5ef] rounded px-2 py-1"><span>{item.name}</span><b>× {item.quantity.toLocaleString()}</b></div>)}</div>
-          {items.map((plan) => <section key={plannedGearId(plan)} className="border-t border-[#e3e6dc] mt-3 pt-2"><h4 className="text-[12px] my-1">{titleOf(plan)} · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4><MissingMaterials rows={ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor")} range={plan} waived={plan.slot === "weapon" && ctx.discounted.includes(plan.series)} /></section>)}
+          <div className="grid gap-1 sm:grid-cols-2">{total.materials.map((item) => <div key={item.name} className="flex justify-between gap-2 fs-md bg-[#f4f5ef] rounded px-2 py-1"><span>{item.name}</span><b>× {item.quantity.toLocaleString()}</b></div>)}</div>
+          {items.map((plan) => <section key={plannedGearId(plan)} className="border-t border-[#e3e6dc] mt-3 pt-2"><h4 className="fs-md my-1">{titleOf(plan)} · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4><MissingMaterials rows={ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor")} range={plan} waived={plan.slot === "weapon" && ctx.discounted.includes(plan.series)} /></section>)}
         </>;
       })()}
     </Modal> : null}
-    {storageError ? <p role="alert" className="text-[12px] text-red-700">無法儲存待製作裝備，重新整理後可能遺失。</p> : null}
+    {storageError ? <p role="alert" className="fs-md text-red-700">無法儲存待製作裝備，重新整理後可能遺失。</p> : null}
     {picker ? <Modal title="加入待製作裝備" onClose={() => setPicker(false)}>
       {pickerKind === "weapon" ? <div role="group" aria-label="武器類型" className="flex flex-wrap gap-1 mb-2">
         {[["", "全部武器"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => <button key={type} aria-pressed={weaponFilter === type} aria-label={name} title={name} onClick={() => setWeaponFilter(type)}
-          className={cx("rounded border w-9 h-9 flex items-center justify-center text-[11px] font-bold cursor-pointer", weaponFilter === type ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
-          {type ? <span aria-hidden="true" className={cx("block w-6 h-6", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}</button>)}
+          className={cx("rounded border w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center fs-sm font-bold cursor-pointer", weaponFilter === type ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+          {type ? <span aria-hidden="true" className={cx("block w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}</button>)}
       </div> : null}
       <MonsterPicker series={series.filter((item) => pickerKind === "weapon" ? (weaponFilter ? item.weaponTypes.includes(weaponFilter) : item.weaponTypes.length) : item.hasArmor)} value={monster} onPick={setMonster} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} placeholder="搜尋魔物、裝備、技能或武器特色" />
       <div className="grid gap-2 mt-2 sm:grid-cols-2">{candidates.filter((plan) => pickerKind === "weapon" ? plan.slot === "weapon" && (!weaponFilter || plan.weaponType === weaponFilter) : plan.slot !== "weapon").map((plan) => {
         const selected = plans.some((entry) => plannedGearId(entry) === plannedGearId(plan));
         return <button key={plannedGearId(plan)} disabled={selected || !ready} onClick={() => { onChange([...plans, plan]); if (pickerKind === "weapon") setPicker(false); }} className="border border-[#e3dac6] rounded bg-[#fffaf0] p-2 text-left cursor-pointer disabled:opacity-50">
-          <span className="flex items-center gap-1 text-[12px] font-bold">{icon(plan)}{titleOf(plan)}{selected ? " ✓" : " ＋"}</span>
+          <span className="flex items-center gap-1 fs-md font-bold">{icon(plan, "w-[var(--ic)] h-[var(--ic)]")}{titleOf(plan)}{selected ? " ✓" : " ＋"}</span>
           {(() => { const traits = plan.slot === "weapon" ? series.find((item) => item.key === plan.series)?.traits[plan.weaponType!] : undefined; return traits ? <div className="my-1 pb-1 border-b border-[#efe6d2]"><TraitDetail traits={traits} /></div> : null; })()}
           <SkillTiers entries={entriesFor(plan)} slotGrades={plan.slot === "weapon" ? [] : series.find((item) => item.key === plan.series)?.slots?.[plan.slot]} />
         </button>;
@@ -1279,7 +1415,7 @@ export default function MhnowApp() {
   const [details, setDetails] = useState<Record<string, SeriesDetail>>({});
   const [failedDetails, setFailedDetails] = useState<Record<string, boolean>>({});
   const [icons, setIcons] = useState<Record<string, string>>({});
-  const [view, setView] = useState<"loadout" | "calculator" | "driftstone" | "community">("loadout");
+  const [view, setView] = useState<"loadout" | "calculator" | "driftstone" | "community" | "gearbox">("loadout");
   const [plans, setPlans] = useState<PlannedGear[]>([]);
   const [plansRestored, setPlansRestored] = useState(false);
   const [plansStorageError, setPlansStorageError] = useState(false);
@@ -1323,16 +1459,6 @@ export default function MhnowApp() {
   // 按「清除」就換一個 key，讓視窗內容重新掛載回到空白（視窗本身不關）。
   const [recommendReset, setRecommendReset] = useState(0);
   const [skillGearReset, setSkillGearReset] = useState(0);
-  // 配裝畫面的縮放（只在桌機生效）：存 localStorage，讀不到就用 100%。
-  const [zoom, setZoom] = useState(100);
-  useEffect(() => {
-    try { const saved = Number(localStorage.getItem("mhnow-zoom")); if (saved >= 80 && saved <= 200) setZoom(saved); } catch { /* 用預設 */ }
-  }, []);
-  function changeZoom(next: number) {
-    const value = Math.min(200, Math.max(80, next));
-    setZoom(value);
-    try { localStorage.setItem("mhnow-zoom", String(value)); } catch { /* 只在這次有效 */ }
-  }
   useEffect(() => {
     try { setClearOnClose(parseClearOnClose(localStorage.getItem(CLEAR_ON_CLOSE_KEY))); } catch { /* 讀不到就用預設（不清除） */ }
     setClearRestored(true);
@@ -1454,7 +1580,7 @@ export default function MhnowApp() {
     const rows = gradeRowsFor(key, kind);
     return rows && kind !== "armor" && discounted.includes(key) ? waiveGatherMaterials(rows) : rows;
   };
-  const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor: loadoutRowsFor, discounted };
+  const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor: loadoutRowsFor, discounted, forged: builds.forged ?? {} };
   const plansIncluded = !stats.excludedBuilds.includes(PLANNED_STATS_ID);
   const statsPieces = [
     ...statsPlan.map(({ row, series, piece }) => ({ key: `${row.id}|${row.itemKey}`, rows: loadoutRowsFor(series, row.kind), range: piece })),
@@ -1541,21 +1667,20 @@ export default function MhnowApp() {
   const full = builds.builds.length >= MAX_BUILDS;
   /** 「建議配裝」按鈕；手機與桌機放的位置不同，各出一顆再用 className 決定哪個尺寸顯示。 */
   const recommendButton = (visibility: string) => <button disabled={!loaded || !driftstones} onClick={() => { setRecommendMounted(true); setRecommendOpen(true); }}
-    className={cx(visibility, "shrink-0 py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-[#28352e] border-[#28352e] text-white disabled:opacity-50")}>建議配裝</button>;
+    className={cx(visibility, "shrink-0 py-1 px-2.5 border rounded-md fs-md cursor-pointer bg-[#28352e] border-[#28352e] text-white disabled:opacity-50")}>建議配裝</button>;
 
   const navButton =(mode: typeof view, label: string) => <button onClick={() => setView(mode)}
-    className={cx("border rounded-full py-2 px-6 cursor-pointer", view === mode ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white border-[#d9d9d9]")}>{label}</button>;
+    className={cx("border rounded-full py-2 px-6 max-[620px]:py-1.5 max-[620px]:px-2 max-[620px]:text-[12px] max-[620px]:whitespace-nowrap cursor-pointer", view === mode ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white border-[#d9d9d9]")}>{label}</button>;
 
-  return <main style={{ "--z": zoom / 100 } as React.CSSProperties} className="min-h-screen bg-[#f4f3ee] text-[#222823]">
-    <ZoomControl zoom={zoom} onChange={changeZoom} />
+  return <main className="min-h-screen bg-[#f4f3ee] text-[#222823]">
     <header className="h-[40px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
-      <div className="text-center"><strong className="text-[17px]">配裝紀錄</strong></div>
+      <div className="text-center"><strong className="fs-xl">配裝紀錄</strong></div>
     </header>
-    <nav className="flex flex-wrap justify-center gap-2 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}{navButton("community", "社群配裝")}</nav>
+    <nav className="flex flex-wrap justify-center gap-2 max-[620px]:gap-1 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}{navButton("gearbox", "我的裝備庫")}{navButton("community", "社群配裝")}</nav>
 
     {/* 所有配裝並排：每張卡固定 340px，放得下幾欄就幾欄；手機（620px 以下）一律一欄滿版，不留兩側空白。
         標題列橫跨全部欄，左緣會跟第一張卡對齊。 */}
-    {view === "loadout" ? <section className="min-[621px]:[zoom:var(--z)] my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7 grid gap-3 max-[620px]:gap-2 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))] min-[621px]:grid-cols-[repeat(auto-fill,minmax(min(100%,430px),430px))] max-[620px]:grid-cols-[minmax(0,1fr)]">
+    {view === "loadout" ? <section className="my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7 grid gap-3 max-[620px]:gap-2 items-start justify-center grid-cols-[repeat(auto-fill,minmax(min(100%,340px),340px))] min-[621px]:grid-cols-[repeat(auto-fill,minmax(min(100%,430px),430px))] max-[620px]:grid-cols-[minmax(0,1fr)]">
       <div className="col-span-full flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         {/* 手機版：標題自成一列，「建議配裝」放在標題同一列的最右邊；桌機版維持在右側工具列的第一個。 */}
         <div className="flex items-center justify-between gap-2 max-[620px]:basis-full">
@@ -1566,41 +1691,41 @@ export default function MhnowApp() {
           
           {recommendButton("max-[620px]:hidden")}
           <button aria-pressed={discounted.length > 0} title="活動素材減免：選了的魔物，武器升級不需要採集素材與尖爪" onClick={() => { setDiscountQuery(""); setDiscountPickerOpen(true); }}
-            className={cx("py-1 px-2.5 border rounded-md text-[12px] cursor-pointer", discounted.length ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
+            className={cx("py-1 px-2.5 border rounded-md fs-md cursor-pointer", discounted.length ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
             素材減免{discounted.length ? ` ${discounted.length}` : ""}</button>
           <button title="把所有配裝存成 JSON 檔" onClick={exportBuilds}
-            className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯出</button>
+            className="py-1 px-2.5 border rounded-md fs-md cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯出</button>
           <button title="從匯出的 JSON 檔讀回配裝" onClick={() => fileInput.current?.click()}
-            className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯入</button>
+            className="py-1 px-2.5 border rounded-md fs-md cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">匯入</button>
           <button title="貼上別人分享的配裝（分享碼或網址），加在現有配裝後面" onClick={() => setReceiving("")}
-            className="py-1 px-2.5 border rounded-md text-[12px] cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">貼上分享碼</button>
+            className="py-1 px-2.5 border rounded-md fs-md cursor-pointer bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]">貼上分享碼</button>
           <input ref={fileInput} type="file" accept=".json,application/json" aria-label="選擇要匯入的配裝檔" className="hidden"
             onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readImport(file); }} />
           <button aria-pressed={stats.open} title="統計勾選的配裝還缺的素材" onClick={() => setStats((next) => ({ ...next, open: !next.open }))}
-            className={cx("py-1 px-2.5 border rounded-md text-[12px] cursor-pointer", stats.open ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
+            className={cx("py-1 px-2.5 border rounded-md fs-md cursor-pointer", stats.open ? "bg-[#099aa5] border-[#099aa5] text-white" : "bg-white border-[#cfc7b4] text-[#39423a] hover:border-[#9aa39b]")}>
             {stats.open ? "✓ " : ""}素材統計</button>
-          <span className="text-[12px] text-[#8b938c] tabular-nums">{builds.builds.length} / {MAX_BUILDS} 組</span>
+          <span className="fs-md text-[#8b938c] tabular-nums">{builds.builds.length} / {MAX_BUILDS} 組</span>
         </div>
       </div>
-      {importMessage ? <p role="status" className={cx("col-span-full flex items-center justify-between gap-2 m-0 py-1.5 px-3 rounded-lg text-[13px]",
+      {importMessage ? <p role="status" className={cx("col-span-full flex items-center justify-between gap-2 m-0 py-1.5 px-3 rounded-lg fs-md",
         importMessage.startsWith("匯入失敗") ? "bg-[#fff3ef] text-[#842e20] border border-[#e3b8b4]" : "bg-[#eef6ef] text-[#2f5e3a] border border-[#c9dccb]")}>
         <span>{importMessage}</span>
-        <button aria-label="關閉訊息" onClick={() => setImportMessage(null)} className="border-0 bg-transparent p-0 text-[14px] text-inherit cursor-pointer opacity-70 hover:opacity-100">✕</button>
+        <button aria-label="關閉訊息" onClick={() => setImportMessage(null)} className="border-0 bg-transparent p-0 fs-lg text-inherit cursor-pointer opacity-70 hover:opacity-100">✕</button>
       </p> : null}
-      {discounted.length || discountStorageError ? <section className="col-span-full flex flex-wrap items-center gap-1.5 py-2 px-3 max-[620px]:px-2 rounded-xl bg-[#eef8f7] border border-[#bfe1de] text-[12px] text-[#2b332c]">
+      {discounted.length || discountStorageError ? <section className="col-span-full flex flex-wrap items-center gap-1.5 py-2 px-3 max-[620px]:px-2 rounded-xl bg-[#eef8f7] border border-[#bfe1de] fs-md text-[#2b332c]">
         {/* 說明收成提示：桌機滑過、手機點一下（取得焦點）就顯示。 */}
         <span tabIndex={0} aria-describedby="discount-tip" className="group relative mr-1 outline-none">
-          <strong className="text-[13px] underline decoration-dotted decoration-[#8b938c] underline-offset-4 cursor-help">素材減免中</strong>
+          <strong className="fs-md underline decoration-dotted decoration-[#8b938c] underline-offset-4 cursor-help">素材減免中</strong>
           <span id="discount-tip" role="tooltip"
-            className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 [transition:opacity_.12s] absolute left-0 top-full mt-1.5 z-30 w-max max-w-[220px] py-1 px-2 rounded-md bg-[#28352e] text-white text-[12px] font-normal leading-[1.5] shadow-[0_4px_12px_rgba(0,0,0,.2)]">
+            className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 [transition:opacity_.12s] absolute left-0 top-full mt-1.5 z-30 w-max max-w-[220px] py-1 px-2 rounded-md bg-[#28352e] text-white fs-md font-normal leading-[1.5] shadow-[0_4px_12px_rgba(0,0,0,.2)]">
             武器不需採集素材與尖爪</span>
         </span>
         {/* 只放魔物圖示省空間，名稱收進 title；點一下取消減免。沒有圖示的才顯示名稱。 */}
         {discounted.map((key) => <button key={key} aria-label={`取消${seriesBy[key]?.name ?? key}的素材減免`} title={`${seriesBy[key]?.name ?? key}（點擊取消）`} onClick={() => toggleDiscount(key)}
-          className="group relative grid place-items-center min-w-8 h-8 p-0.5 border border-[#bfe1de] rounded-lg bg-white text-[11px] cursor-pointer hover:border-[#099aa5]">
-          {icons[key] ? <span aria-hidden="true" className={cx("w-7 h-7", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[key])})` }} /> : <span className="px-1">{seriesBy[key]?.name ?? key}</span>}
-          <span aria-hidden="true" className="absolute -top-1 -right-1 hidden group-hover:grid place-items-center w-3.5 h-3.5 rounded-full bg-[#5b635c] text-white text-[9px] leading-none">✕</span></button>)}
-        {discounted.length ? <button onClick={() => setDiscounted([])} className="ml-auto border-0 bg-transparent p-0 text-[12px] text-[#099aa5] cursor-pointer hover:underline">全部清除</button> : null}
+          className="group relative grid place-items-center min-w-[var(--ic-btn)] h-[var(--ic-btn)] p-0.5 border border-[#bfe1de] rounded-lg bg-white fs-sm cursor-pointer hover:border-[#099aa5]">
+          {icons[key] ? <span aria-hidden="true" className={cx("w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(icons[key])})` }} /> : <span className="px-1">{seriesBy[key]?.name ?? key}</span>}
+          <span aria-hidden="true" className="absolute -top-1 -right-1 hidden group-hover:grid place-items-center w-3.5 h-3.5 rounded-full bg-[#5b635c] text-white fs-sm leading-none">✕</span></button>)}
+        {discounted.length ? <button onClick={() => setDiscounted([])} className="ml-auto border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer hover:underline">全部清除</button> : null}
         {discountStorageError ? <span role="alert" className="basis-full text-[#b23a30]">瀏覽器無法儲存素材減免設定，重新整理後可能遺失。</span> : null}
       </section> : null}
       {stats.open ? <MissingSummary builds={[...builds.builds, ...(plans.length ? [{ id: PLANNED_STATS_ID, name: "待製作裝備", gear: {}, drifts: {}, pieces: {}, showMissing: false }] : [])]} settings={stats} onChange={setStats} total={statsTotal} loading={statsLoading} monsterName={(key) => seriesBy[key]?.name ?? key} /> : null}
@@ -1619,7 +1744,7 @@ export default function MhnowApp() {
         onSkillGear={() => { setSkillGearBuild(build.id); setSkillGearOpen(true); }} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} onShare={() => openShare(build)} /></SortableBuild>)}
 
       <button aria-label="新增配裝" disabled={full} title={full ? `最多 ${MAX_BUILDS} 組` : "新增一組空白配裝"} onClick={addNewBuild}
-        className="min-h-[120px] border border-dashed border-[#b5bbb5] rounded-xl bg-transparent text-[#5b635c] text-[14px] cursor-pointer hover:bg-[#ece8dc] disabled:cursor-default disabled:hover:bg-transparent">
+        className="min-h-[120px] border border-dashed border-[#b5bbb5] rounded-xl bg-transparent text-[#5b635c] fs-lg cursor-pointer hover:bg-[#ece8dc] disabled:cursor-default disabled:hover:bg-transparent">
         {full ? `已達上限 ${MAX_BUILDS} 組` : "＋ 新增配裝"}
       </button>
 
@@ -1645,8 +1770,8 @@ export default function MhnowApp() {
         <p className={cx(NOTE, "mt-0 mb-2")}>點魔物加入或取消。選了的魔物，所有武器升級都不需要採集素材（含尖爪）；防具不受影響。只套用在裝備配置與素材統計。</p>
         <MonsterPicker series={weaponSeries} value={discounted} onPick={toggleDiscount} icons={icons} display={display} onDisplay={setDisplay} query={discountQuery} onQuery={setDiscountQuery} />
         <div className="flex gap-2 mt-3">
-          <button disabled={!discounted.length} onClick={() => setDiscounted([])} className="py-2 px-3 rounded-lg border border-[#cfc7b4] bg-white text-[13px] cursor-pointer disabled:opacity-50 disabled:cursor-default">全部清除</button>
-          <button onClick={() => setDiscountPickerOpen(false)} className="flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer">完成</button>
+          <button disabled={!discounted.length} onClick={() => setDiscounted([])} className="py-2 px-3 rounded-lg border border-[#cfc7b4] bg-white fs-md cursor-pointer disabled:opacity-50 disabled:cursor-default">全部清除</button>
+          <button onClick={() => setDiscountPickerOpen(false)} className="flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white fs-md cursor-pointer">完成</button>
         </div>
       </Modal> : null}
       {editing && editingBuild ? <Modal title={editing.slot === "weapon" ? "選擇武器" : `選擇${slotName(editing.slot)}裝備`} onClose={() => setEditing(null)}>
@@ -1663,10 +1788,18 @@ export default function MhnowApp() {
       </Modal> : null}
     </section>
 
-    : view === "community" ? <section className="min-[621px]:[zoom:var(--z)] max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
+    : view === "gearbox" ? <section className="max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
+      <PageHeading title="我的裝備庫" hint="配裝畫面如有輸入裝備等級，會自動帶入此區" />
+      <GearBox owned={builds.owned ?? {}} forged={builds.forged ?? {}} builds={builds.builds} seriesBy={seriesBy} ctx={cardContext} weaponTypeName={weaponTypeName} slotName={slotName}
+        onForge={(id, skill, on) => setBuilds((state) => setForged(state, id, skill, on))} onGrade={(id, grade) => setBuilds((state) => setOwnedGrade(state, id, grade))} onSkill={(name, level) => setSkillTip({ name, level })} />
+    </section>
+
+    : view === "community" ? <section className="max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
       <PageHeading eyebrow="COMMUNITY" title="社群配裝" description="mhnow.me 玩家分享的配裝，依按讚數排序。" />
-      <CommunityBuilds series={allSeries} icons={icons} weaponIcons={WEAPON_ICON} modal={(title, onClose, content) => <Modal title={title} onClose={onClose}>{content}</Modal>} weaponTypeName={weaponTypeName} slotName={slotName} full={builds.builds.length >= MAX_BUILDS}
-        onSkill={(name, level) => setSkillTip({ name, level })}
+      <CommunityBuilds series={allSeries} icons={icons} weaponIcons={WEAPON_ICON}
+        renderCard={(build, header, footer) => <BuildCard readOnly build={build} rows={gearRowsOf(build, seriesBy, weaponTypeName, slotName)} ctx={cardContext} header={header} footer={footer}
+          editingSlot={null} open={() => false} canDelete={false} onEdit={() => {}} onToggle={() => {}} onDrift={() => {}} onChange={() => {}} onDelete={() => {}} onSkillGear={() => {}} onShare={() => {}}
+          onSkill={(name, level) => setSkillTip({ name, level })} />} modal={(title, onClose, content) => <Modal title={title} onClose={onClose}>{content}</Modal>} weaponTypeName={weaponTypeName} full={builds.builds.length >= MAX_BUILDS}
         skillsOf={(build) => maxSkillsOf(build, gearRowsOf(build, seriesBy, weaponTypeName, slotName))}
         onAdd={(build) => { const result = appendBuilds(builds, [build]); if (!result.added) return; setBuilds(result.state); setImportMessage(`已加入「${build.name}」，到「配裝」頁就看得到。`); }} />
     </section>
@@ -1676,7 +1809,7 @@ export default function MhnowApp() {
 
       <section className="block mt-2.5 p-3.5 max-[620px]:p-2.5 bg-white border border-[#dfe2dc] rounded-[10px]">
         {!loaded ? <p className={NOTE}>資料載入中……</p>
-          : <button className="w-full flex-none flex justify-between items-center ml-0 py-3.5 px-4 text-left border border-[#28352e] bg-[#28352e] text-white rounded-lg text-[13px] cursor-pointer" onClick={() => { setCalcQuery(""); setCalcPickerOpen(true); }}>
+          : <button className="w-full flex-none flex justify-between items-center ml-0 py-3.5 px-4 text-left border border-[#28352e] bg-[#28352e] text-white rounded-lg fs-md cursor-pointer" onClick={() => { setCalcQuery(""); setCalcPickerOpen(true); }}>
               <span>{calcKind ? `${seriesBy[calcSeries]?.name}${calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}` : "選擇魔物與防具／武器"}</span>
               <small className="font-normal opacity-75">{calcKind ? "點擊更換" : "點擊選擇"}</small>
             </button>}
@@ -1699,9 +1832,9 @@ export default function MhnowApp() {
       {calcKind ? <section className="min-w-0">
         {!calcRows ? <p className={NOTE}>升級資料載入中……</p> : !calcRows.length ? <p className="m-8 p-5 border border-[#d78370] bg-[#fff3ef] text-[#842e20] rounded-[10px]">這個組合沒有升級資料。</p> : <>
           <div className="flex justify-between items-end pt-4 pb-6 px-0 border-b border-[#d9ddd6] max-[720px]:pt-[26px]"><div className="text-right">
-            <span className="block text-[12px] tracking-[1.5px] text-[#8a928b]">{calcKind === "armor" ? "ARMOR" : "WEAPON"}</span>
+            <span className="block fs-md tracking-[1.5px] text-[#8a928b]">{calcKind === "armor" ? "ARMOR" : "WEAPON"}</span>
             <h2 className="text-[34px] my-[7px] mx-0 max-[720px]:text-[28px]">{seriesBy[calcSeries]?.name}{calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}</h2>
-            <p className="text-[14px] text-[#747c75] m-0">{calcKind === "armor" ? "以下是單一部位所需素材，整套五件請再乘上件數。" : "以下是該武器由目前階級升到目標階級所需素材。"}</p>
+            <p className="fs-lg text-[#747c75] m-0">{calcKind === "armor" ? "以下是單一部位所需素材，整套五件請再乘上件數。" : "以下是該武器由目前階級升到目標階級所需素材。"}</p>
           </div></div>
           <GradeRangeCost rows={calcRows} value={calcRange} onChange={setCalcRange} />
         </>}
@@ -1716,13 +1849,13 @@ export default function MhnowApp() {
     {sharing ? builds.builds.filter((build) => build.id === sharing).map((build) => {
       const code = encodeBuildShare(build);
       const link = shareUrl(code, window.location.href);
-      const copyButton = "flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer";
+      const copyButton = "flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white fs-md cursor-pointer";
       const me = toMhnowMeLink(build, (key) => seriesBy[key]?.name ?? key);
       return <Modal key={build.id} title={`分享「${build.name || "未命名"}」`} narrow onClose={() => setSharing(null)}>
         <div className="flex justify-center p-2 mb-2 rounded-lg border border-[#e3dac6]"><QrCode text={link} /></div>
         <p className={cx(NOTE, "mt-0 mb-2")}>對方用手機相機掃描就能打開並加入這組配裝；或把分享碼傳給對方，在「貼上分享碼」貼上。只分享裝備與漂流石，不含升級進度。</p>
         <textarea readOnly aria-label="分享碼" value={code} rows={3} onFocus={(event) => event.currentTarget.select()}
-          className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md bg-[#f8f8f5] text-[11px] font-mono break-all resize-none" />
+          className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md bg-[#f8f8f5] fs-sm font-mono break-all resize-none" />
         <div className="flex gap-2">
           <button onClick={() => void copyShare("code", code)} className={copyButton}>{copied === "code" ? "✓ 已複製分享碼" : "複製分享碼"}</button>
           <button onClick={() => void copyShare("link", link)} className={copyButton}>{copied === "link" ? "✓ 已複製連結" : "複製連結"}</button>
@@ -1730,9 +1863,9 @@ export default function MhnowApp() {
         <div className="mt-3 pt-3 border-t border-dashed border-[#e3dac6]">
           <p className={cx(NOTE, "mt-0 mb-2")}>mhnow.me 連結：貼到 mhnow.me 的模擬器就能打開（只含裝備與漂流石）。</p>
           {"url" in me ? <button onClick={() => void copyShare("me", me.url)} className={cx(copyButton, "w-full")}>{copied === "me" ? "✓ 已複製 mhnow.me 連結" : "複製 mhnow.me 連結"}</button>
-            : <p className="m-0 text-[12px] text-[#b23a30]">{me.error}</p>}
+            : <p className="m-0 fs-md text-[#b23a30]">{me.error}</p>}
         </div>
-        {copied === "fail" ? <p role="alert" className="mt-2 mb-0 text-[12px] text-[#b23a30]">無法自動複製，請點上面的分享碼全選後手動複製。</p> : null}
+        {copied === "fail" ? <p role="alert" className="mt-2 mb-0 fs-md text-[#b23a30]">無法自動複製，請點上面的分享碼全選後手動複製。</p> : null}
       </Modal>;
     }) : null}
 
@@ -1747,30 +1880,30 @@ export default function MhnowApp() {
       const stoneCount = result && "build" in result ? Object.values(result.build.drifts).flat().filter(Boolean).length : 0;
       return <Modal title="加入分享的配裝" narrow onClose={() => setReceiving(null)}>
         <textarea aria-label="貼上分享碼或網址" value={receiving} rows={3} autoFocus placeholder="貼上 MHN1. 開頭的分享碼、分享網址，或 mhnow.me 的配裝連結" onChange={(event) => setReceiving(event.target.value)}
-          className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md text-[12px] break-all resize-none outline-none focus:border-[#099aa5]" />
-        {result && "error" in result ? <p role="alert" className="mt-0 mb-2 text-[12px] text-[#b23a30]">{result.error}</p> : null}
+          className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md fs-md break-all resize-none outline-none focus:border-[#099aa5]" />
+        {result && "error" in result ? <p role="alert" className="mt-0 mb-2 fs-md text-[#b23a30]">{result.error}</p> : null}
         {result && "build" in result ? <section className="mb-3 p-2 rounded-lg bg-[#fffaf0] border border-[#e3dac6]">
-          <strong className="block mb-1 text-[13px] text-[#2b332c]">{result.build.name || "未命名"}</strong>
-          {!loaded ? <p className={cx(NOTE, "m-0")}>資料載入中……</p> : preview.map((row) => <p key={row.id} className="flex items-center gap-1.5 m-0 py-0.5 text-[12px] text-[#39423a]">
+          <strong className="block mb-1 fs-md text-[#2b332c]">{result.build.name || "未命名"}</strong>
+          {!loaded ? <p className={cx(NOTE, "m-0")}>資料載入中……</p> : preview.map((row) => <p key={row.id} className="flex items-center gap-1.5 m-0 py-0.5 fs-md text-[#39423a]">
             <span aria-hidden="true" className={cx("w-4 h-4 flex-none", BG_ICON)} style={{ backgroundImage: `url(${assetPath(row.icon)})` }} />{row.title}</p>)}
           {stoneCount ? <p className={cx(NOTE, "m-0 mt-1")}>漂流石 {stoneCount} 顆</p> : null}
         </section> : null}
         <button disabled={!result || !("build" in result) || builds.builds.length >= MAX_BUILDS} onClick={() => { if (result && "build" in result) addSharedBuild(result.build); }}
-          className="w-full py-2 rounded-lg border-0 bg-[#28352e] text-white text-[13px] cursor-pointer disabled:opacity-40 disabled:cursor-default">
+          className="w-full py-2 rounded-lg border-0 bg-[#28352e] text-white fs-md cursor-pointer disabled:opacity-40 disabled:cursor-default">
           {builds.builds.length >= MAX_BUILDS ? `已達上限 ${MAX_BUILDS} 組，請先刪掉一組` : "加在現有配裝後面"}</button>
       </Modal>;
     })() : null}
 
     {importing ? <Modal title="匯入配裝" narrow onClose={() => setImporting(null)}>
-      <p className="mt-0 mb-2 text-[13px] text-[#2b332c]">檔案裡有 <b>{importing.state.builds.length}</b> 組配裝：</p>
-      <p className="mt-0 mb-3 text-[12px] text-[#5b635c] leading-[1.6]">{importing.state.builds.slice(0, 8).map((build) => build.name || "（未命名）").join("、")}{importing.state.builds.length > 8 ? ` 等 ${importing.state.builds.length} 組` : ""}</p>
+      <p className="mt-0 mb-2 fs-md text-[#2b332c]">檔案裡有 <b>{importing.state.builds.length}</b> 組配裝：</p>
+      <p className="mt-0 mb-3 fs-md text-[#5b635c] leading-[1.6]">{importing.state.builds.slice(0, 8).map((build) => build.name || "（未命名）").join("、")}{importing.state.builds.length > 8 ? ` 等 ${importing.state.builds.length} 組` : ""}</p>
       <div className="flex flex-col gap-2">
         <button onClick={() => { if (window.confirm(`現在的 ${builds.builds.length} 組配裝會被清掉，確定要取代嗎？`)) applyImport("replace"); }}
-          className="py-2 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] text-[13px] text-left cursor-pointer hover:bg-[#fff3ef]">
-          <b>取代全部</b><small className="block text-[11px] text-[#8b938c]">清掉現在的 {builds.builds.length} 組，換成檔案裡的</small></button>
+          className="py-2 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] fs-md text-left cursor-pointer hover:bg-[#fff3ef]">
+          <b>取代全部</b><small className="block fs-sm text-[#8b938c]">清掉現在的 {builds.builds.length} 組，換成檔案裡的</small></button>
         <button disabled={builds.builds.length >= MAX_BUILDS} onClick={() => applyImport("append")}
-          className="py-2 px-3 border border-[#cfc7b4] rounded-lg bg-white text-[#2b332c] text-[13px] text-left cursor-pointer hover:border-[#9aa39b] disabled:cursor-default">
-          <b>加在後面</b><small className="block text-[11px] text-[#8b938c]">{builds.builds.length >= MAX_BUILDS ? `已經有 ${MAX_BUILDS} 組，放不下了`
+          className="py-2 px-3 border border-[#cfc7b4] rounded-lg bg-white text-[#2b332c] fs-md text-left cursor-pointer hover:border-[#9aa39b] disabled:cursor-default">
+          <b>加在後面</b><small className="block fs-sm text-[#8b938c]">{builds.builds.length >= MAX_BUILDS ? `已經有 ${MAX_BUILDS} 組，放不下了`
             : builds.builds.length + importing.state.builds.length > MAX_BUILDS ? `保留現在的，最多只能再加 ${MAX_BUILDS - builds.builds.length} 組` : "保留現在的配裝，檔案裡的接在後面"}</small></button>
       </div>
     </Modal> : null}
@@ -1778,15 +1911,33 @@ export default function MhnowApp() {
     {skillTip ? <Modal title={skillTip.name} narrow sheet onClose={() => setSkillTip(null)}>
       {index?.skillLevels[skillTip.name]?.length ? <ol className="list-none m-0 p-0 flex flex-col gap-1">
         {index.skillLevels[skillTip.name].map((text, position) => { const current = position + 1 === Math.min(skillTip.level, index.skillLevels[skillTip.name].length); return <li key={position}
-          className={cx("flex gap-2.5 py-[7px] px-2.5 rounded-md text-[13px] leading-[1.5]", current ? "bg-[#fff3dc] text-[#2b332c] shadow-[inset_3px_0_0_#f59a00]" : "text-[#5b635c]")}>
+          className={cx("flex gap-2.5 py-[7px] px-2.5 rounded-md fs-md leading-[1.5]", current ? "bg-[#fff3dc] text-[#2b332c] shadow-[inset_3px_0_0_#f59a00]" : "text-[#5b635c]")}>
           <b className={cx("flex-[0_0_32px] font-bold", current ? "text-[#e08a00]" : "text-[#8b938c]")}>Lv{position + 1}</b><span>{text}</span>
         </li>; })}
       </ol> : <p className={NOTE}>這個技能沒有說明資料。</p>}
       {skillTip.level > (index?.skillLevels[skillTip.name]?.length ?? Infinity)
-        ? <p className="mt-2.5 mx-0 mb-0 text-[12px] text-[#d23c3c]">目前合計 {skillTip.level} 級，超過上限 {index?.skillLevels[skillTip.name].length} 級，超出的等級不會生效。</p> : null}
+        ? <p className="mt-2.5 mx-0 mb-0 fs-md text-[#d23c3c]">目前合計 {skillTip.level} 級，超過上限 {index?.skillLevels[skillTip.name].length} 級，超出的等級不會生效。</p> : null}
     </Modal> : null}
 
     {driftPick && driftstones ? <Modal title={`選擇漂流石技能（${slotName(driftPick.slot)}　第 ${driftPick.index + 1} 洞）`} narrow onClose={() => setDriftPick(null)}>
+      {(() => {
+        const target = builds.builds.find((build) => build.id === driftPick.build);
+        const item = target ? itemKeyOf(target, driftPick.slot) : "";
+        if (!target || !item) return null;
+        const id = gearId(driftPick.slot, item);
+        const learned = builds.forged?.[id] ?? [];
+        const now = target.drifts[driftPick.slot]?.[driftPick.index] ?? null;
+        const assign = (pick: DriftPick) => { changeBuild(driftPick.build)((build) => { const picks = [...(build.drifts[driftPick.slot] ?? [])]; picks[driftPick.index] = pick; return { ...build, drifts: { ...build.drifts, [driftPick.slot]: picks } }; }); setDriftPick(null); };
+        return <div className="mb-3 p-2 rounded-lg bg-[#f6fbfb] border border-[#bfe1de]">
+          <p className="m-0 mb-1.5 fs-md font-bold text-[#1f4f4c]">這件裝備已練成的漂流石</p>
+          {learned.length ? <div className="flex flex-wrap gap-1">{learned.map((skill) => <button key={skill} onClick={() => assign({ skill, color: now?.skill === skill ? now.color : "" })}
+            className={cx("py-1 px-2.5 border rounded-lg fs-md cursor-pointer", now?.skill === skill ? "border-[#e08a00] bg-[#fff3dc]" : "border-[#bfe1de] bg-white hover:border-[#099aa5]")}>{skill}</button>)}</div>
+            : <p className={cx(NOTE, "m-0")}>還沒有。選好技能後，在下面勾選「已練成」。</p>}
+          {now ? <label className="flex items-center gap-1.5 mt-2 fs-md text-[#2b332c] cursor-pointer"><input type="checkbox" checked={learned.includes(now.skill)}
+            onChange={(event) => setBuilds((state) => setForged(state, id, now.skill, event.target.checked))} />「{now.skill}」這件裝備已經練成</label> : null}
+          <p className={cx(NOTE, "m-0 mt-1")}>一件裝備可以練出很多種漂流石並自由更換：點上面已練成的就直接鑲上；下面挑的是還沒練成的。</p>
+        </div>;
+      })()}
       <DriftstonePicker data={driftstones} current={builds.builds.find((build) => build.id === driftPick.build)?.drifts[driftPick.slot]?.[driftPick.index] ?? null}
         onPick={(pick) => {
           changeBuild(driftPick.build)((build) => { const picks = [...(build.drifts[driftPick.slot] ?? [])]; picks[driftPick.index] = pick; return { ...build, drifts: { ...build.drifts, [driftPick.slot]: picks } }; });
