@@ -16,12 +16,12 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - name: Configure Pages
         id: pages
@@ -31,7 +31,8 @@ jobs:
       # 腳本遇到對不上的代碼會直接失敗，這次部署就不會發生，網站維持上一版。
       - name: Refresh community builds
         if: github.event_name != 'push'
-        run: npm run data:community
+        # 輸出同時寫進這次執行的「Summary」頁，一眼看得出有沒有抓到新配裝。
+        run: npm run data:community | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Build static site
         run: npm run build
         env:
@@ -43,7 +44,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pages: write
       id-token: write

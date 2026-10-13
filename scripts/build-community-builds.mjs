@@ -163,6 +163,15 @@ for (const type of new Set(builds.map((build) => build.type))) {
 }
 await writeFile("src/mhnow/popularSkills.json", JSON.stringify(popular, null, 1) + "\n");
 
+// 跟上次存的資料比，看這次有沒有新東西（排程跑完看 Actions 的摘要就知道有沒有抓到新配裝）。
+const signature = (build) => JSON.stringify([build.gear, build.drifts]);
+let savedBefore = new Set();
+try { savedBefore = new Set(JSON.parse(await readFile("public/mhnow/community-builds.json", "utf8")).builds.map(signature)); } catch { /* 第一次抓 */ }
+const current = new Set(builds.map(signature));
+const added = [...current].filter((key) => !savedBefore.has(key)).length;
+const removed = [...savedBefore].filter((key) => !current.has(key)).length;
+const newest = Math.max(...builds.map((build) => build.time ?? 0));
+
 await writeFile("public/mhnow/community-builds.json", JSON.stringify({
   source: "https://mhnow.me/", license: "CC BY 4.0（MHNOW.ME）", fetchedAt: new Date().toISOString(),
   // 站方排行榜總套數：頁面用來說明收錄了多少、其餘為什麼還沒列。
@@ -173,4 +182,5 @@ await writeFile(CODES_FILE, JSON.stringify({
   weaponTypes: Object.fromEntries(Object.entries(WEAPON_TYPES).map(([code, type]) => [type, code])),
   series: sorted(seriesCodes), skills: sorted(skillCodes),
 }, null, 1) + "\n");
+console.log(`抓取時間 ${new Date().toISOString()}；站方最新一筆配裝 ${new Date(newest * 1000).toISOString()}；跟上次存的資料比：新增 ${added} 套、移除 ${removed} 套`);
 console.log(`${rank.data.length} 套裡留下 ${builds.length} 套（${skipped} 套有認不得的代碼）；系列代碼 ${Object.keys(seriesCodes).length}、技能代碼 ${Object.keys(skillCodes).length}`);

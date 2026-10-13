@@ -86,6 +86,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
   // 資料本來就是按讚數排好的；「最新」改依首次分享時間，新的在前，同時間維持按讚順序。
   const sorted = sort === "new" ? [...matches].sort((a, b) => (b.time ?? 0) - (a.time ?? 0)) : matches;
   const shown = sorted.slice(0, limit);
+  const newest = Math.max(0, ...(data?.builds ?? []).map((entry) => entry.time ?? 0));
   // 先選武器或先選魔物都可以：選了一邊，另一邊沒有對應配裝資料的選項會停用，所以不會選成 0 套。
   const typeAvailable = (option: string) => !monster || builds.some((entry) => entry.type === option && weaponMonster(entry) === monster);
   const monsterAvailable = (key: string) => !type || builds.some((entry) => entry.type === type && weaponMonster(entry) === key);
@@ -159,6 +160,9 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
           className={cx("px-3 py-1 rounded fs-md border-0 cursor-pointer", sort === value ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{label}</button>)}
       </div>
       <span className="fs-md text-[#858d86]">{matches.length} 套</span>
+      <span className="ml-auto fs-sm text-[#8b938c]" title="資料每天更新一次；重新抓取後這個時間就會更新，就算沒有新配裝也一樣">
+        資料更新 {new Date(data.fetchedAt).toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+        {newest ? `・最新分享 ${new Date(newest * 1000).toLocaleDateString("zh-TW", { month: "2-digit", day: "2-digit" })}` : ""}</span>
     </div>
     {!shown.length ? <p className="fs-md text-[#858d86]">沒有符合的配裝。</p> : null}
     <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] items-start">
