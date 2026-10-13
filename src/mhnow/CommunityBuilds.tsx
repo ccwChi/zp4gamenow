@@ -96,6 +96,8 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
   const icon = (src: string | undefined, size: string) => src ? <span aria-hidden="true" className={cx(size, "flex-none bg-contain bg-center bg-no-repeat")} style={{ backgroundImage: `url(${assetPath(src)})` }} /> : null;
   const iconButton = (on: boolean) => cx("w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center rounded border cursor-pointer fs-md font-bold",
     on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white");
+  const tile = (on: boolean) => cx("min-w-[var(--ic-btn)] min-h-[var(--ic-btn)] p-[5px] flex items-center justify-center rounded-[7px] border text-[#2e3731] cursor-pointer",
+    on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f1f2ef]");
   const label = "flex-none w-9 pt-2 fs-md text-[#8b938c]";
   const link = "border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer hover:underline";
 
@@ -143,15 +145,13 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
       </div> : null}
     </section>
     {choosingMonster ? modal("選擇魔物", () => setChoosingMonster(false),
-      <div role="group" aria-label="魔物" className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
-        <button aria-pressed={!monster} onClick={() => pickMonster("")}
-          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border fs-sm cursor-pointer", !monster ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5]")}>
-          <span className="w-9 h-9 flex items-center justify-center fs-lg font-bold">全</span>全部</button>
-        {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = nameOf[key] ?? key; return <button key={key} aria-pressed={monster === key}
+      // 跟其他選魔物的地方一樣：只放小圖示，名稱在滑過時顯示。
+      <div role="group" aria-label="魔物" className="flex flex-wrap gap-1 content-start">
+        <button aria-pressed={!monster} title="全部魔物" onClick={() => pickMonster("")} className={cx(tile(!monster), "fs-md font-bold")}>全</button>
+        {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = nameOf[key] ?? key; return <button key={key} aria-pressed={monster === key} aria-label={name}
           disabled={!available} title={available ? name : `${name}（沒有${weaponTypeName(type)}的配裝）`} onClick={() => pickMonster(key)}
-          className={cx("flex flex-col items-center justify-center gap-0.5 min-h-[64px] p-1 rounded-lg border fs-sm leading-tight text-center cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed",
-            monster === key ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-[#f8f8f5] enabled:hover:border-[#c5cdc6]")}>
-          {icon(icons[key], "w-[var(--ic)] h-[var(--ic)]")}<span className="max-w-full truncate">{name}</span></button>; })}
+          className={cx(tile(monster === key), "disabled:opacity-25 disabled:cursor-not-allowed")}>
+          {icons[key] ? icon(icons[key], "w-[var(--ic)] h-[var(--ic)]") : <span className="fs-sm font-bold leading-[1.1] px-1.5">{name}</span>}</button>; })}
       </div>) : null}
     <div className="flex flex-wrap items-center gap-2">
       <span className="fs-md font-bold text-[#39423a]">排序</span>

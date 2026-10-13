@@ -268,12 +268,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
       && (!goalCount || !onlyHit || text || gainOf(item.key, slot, 10) > 0))
       .sort((a, b) => gainOf(b.key, slot, 10) - gainOf(a.key, slot, 10) || a.name.localeCompare(b.name, "zh-Hant"));
   };
-  /** 指定部位目前提供了多少技能（原生，不含漂流石），給「還差多少」的提示用。 */
-  const fixedProvides = RECOMMEND_SLOTS.reduce<Record<string, number>>((sum, slot) => {
-    const lock = fixed[slot];
-    if (lock) for (const [name, level] of Object.entries(pieceSkills(byKey[lock.key], slot, lock.grade))) sum[name] = (sum[name] ?? 0) + level;
-    return sum;
-  }, {});
   const skillSpans = (key: string, slot: Slot, pieceGrade: number) => {
     const entries = Object.entries(pieceSkills(byKey[key], slot, pieceGrade));
     return entries.length ? entries.map(([name, level], position) => <span key={name}>{position ? "、" : ""}
@@ -353,7 +347,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
         <section className={SECTION}>
           <div className={SECTION_HEAD}>
             <span className="flex items-center gap-2 min-w-0">{weapon ? <><Icon src={gearIcons.weapon[weaponType]} size={IC} /><Icon src={weaponIcons[weaponKey]} size={IC} fallback={byKey[weaponKey]?.name} /></> : null}
-              <span className={weapon ? "truncate" : "min-w-0"}>{weapon ? weaponTitle : <>① 武器<small className={HINT}>先點武器種類，再點魔物</small></>}</span></span>
+              <span className={weapon ? "truncate" : "min-w-0"}>{weapon ? weaponTitle : "① 武器"}</span></span>
             {weapon ? <button className={SMALL_BUTTON} onClick={() => setChoosingWeapon(!choosingWeapon)}>{choosingWeapon ? "收合" : "更換"}</button> : null}
           </div>
           {choosingWeapon || !weapon ? <div className="p-2">{weaponPicker(weapon, (next) => { setWeapon(next); setChoosingWeapon(false); })}</div> : null}
@@ -382,7 +376,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                     className={cx("px-2 py-0.5 rounded fs-sm border-0 cursor-pointer disabled:opacity-40 disabled:cursor-default", pick.mode === mode ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{MODE_NAMES[mode]}</button>)}
                 </div>
                 <button aria-label={`移除${pick.name}`} onClick={() => toggleSkill(pick.name)} className="w-6 h-6 border-0 bg-transparent text-[#8b938c] cursor-pointer">✕</button>
-                {pick.mode === "bonus" ? <p className={cx(NOTE, "basis-full")}>不強制，越高的方案排越前面</p>
+                {pick.mode === "bonus" ? null
                   : <div className="basis-full flex items-center gap-2"><LevelBar max={max} native={pick.level} label={`${pick.name}要求等級`} onPick={(level) => update(pick.name, { level })} />
                     <b className="w-9 shrink-0 text-right text-[#e08a00]">Lv{pick.level}</b></div>}
               </div>;
@@ -397,7 +391,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
         </section>
 
         <section className={SECTION}>
-          <div className={SECTION_HEAD}><span className="min-w-0">③ 指定部位{Object.keys(fixed).length ? `（${Object.keys(fixed).length}）` : ""}<small className={HINT}>指定某部位穿哪件、什麼階級（可依技能挑裝備），只算該件的技能與洞數，沒有洞就不鍊成；其餘部位自動搭配（G{grade}）</small></span>
+          <div className={SECTION_HEAD}><span className="min-w-0">③ 指定部位{Object.keys(fixed).length ? `（${Object.keys(fixed).length}）` : ""}<small className={HINT}>若有指定等級，會顯示指定等級的狀態</small></span>
             <span className="flex items-center gap-3">
               {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixed({}); setFixing(null); }}>清除</button> : null}
               <button aria-expanded={fixOpen} className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixOpen(!fixOpen); setFixing(null); }}>{fixOpen ? "收合" : "展開"} {fixOpen ? "▴" : "▾"}</button>
@@ -434,7 +428,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                     {[...new Set([...picks.map((pick) => pick.name), ...candSkills])].map((name) => { const on = candSkills.includes(name);
                       return <button key={name} aria-pressed={on} onClick={() => setCandSkills(on ? candSkills.filter((skill) => skill !== name) : [...candSkills, name])}
                         className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; })}
-                    {!picks.length && !candSkills.length ? <span className="fs-sm text-[#858d86]">先在「② 技能」選技能，或直接在上面搜尋技能名稱</span> : null}
+                    
                     {candSkills.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setCandSkills([])}>清除</button> : null}
                     {goalCount ? <label className="ml-auto flex items-center gap-1 fs-md text-[#5b635c] cursor-pointer"><input type="checkbox" checked={onlyHit} onChange={(event) => setOnlyHit(event.target.checked)} />只看有貢獻的</label> : null}
                   </div>
@@ -456,7 +450,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                       </button>;
                     };
                     return <div className="max-h-[260px] overflow-auto space-y-1">
-                      {same.length ? <><p className={cx(NOTE, "m-0")}><b>同效果可互換</b>：對目標技能的貢獻和洞數跟目前這件一樣，可以改穿喜歡的外觀或別的副技能。</p>{same.map(row)}<p className={cx(NOTE, "m-0 pt-1")}><b>其他</b></p></> : null}
+                      {same.length ? <><p className={cx(NOTE, "m-0")}><b>可換</b></p>{same.map(row)}<p className={cx(NOTE, "m-0 pt-1")}><b>其他</b></p></> : null}
                       {all.filter((candidate) => !same.includes(candidate)).map(row)}
                       {!all.length ? <p className={NOTE}>找不到符合的裝備。{goalCount && onlyHit ? "可以取消「只看有貢獻的」。" : ""}</p> : null}
                     </div>;
@@ -464,9 +458,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                 </div> : null}
               </div>;
             })}
-            {Object.keys(fixed).length && picks.some((pick) => pick.mode !== "bonus") ? <p className={cx(NOTE, "px-1")}>指定部位原生提供：{picks.filter((pick) => pick.mode !== "bonus").map((pick, position) => {
-              const have = fixedProvides[pick.name] ?? 0;
-              return <span key={pick.name}>{position ? "、" : ""}<b className={have >= pick.level ? "text-[#3e8e51]" : "text-[#e08a00]"}>{pick.name} {have}／{pick.level}</b></span>; })}。其餘由未指定的部位與漂流石補。</p> : null}
           </div> : null}
         </section>
 

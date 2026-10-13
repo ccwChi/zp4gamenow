@@ -302,27 +302,33 @@ function ChoiceGrid({ label, items, value, onPick, iconOnly }: {
   </div>;
 }
 
-/** 建議配裝用的武器選擇：先點武器種類圖示，再點有這種武器的魔物圖示。換種類時，原本的魔物也有這種武器就直接沿用。 */
+/**
+ * 建議配裝用的武器選擇：武器種類與魔物先選哪個都可以（跟社群配裝一樣），兩個都選了才算選好；
+ * 選了一邊，另一邊沒有對應武器的選項會停用或濾掉，再點一次已選的就取消。
+ */
 function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; icons: Record<string, string>; value: string; onPick: (weapon: string) => void }) {
-  const [currentKey, currentType] = value.split("::");
-  const [type, setType] = useState(currentType ?? "");
+  const [currentKey = "", currentType = ""] = value ? value.split("::") : [];
+  const [type, setType] = useState(currentType);
+  const [monster, setMonster] = useState(currentKey);
   const [query, setQuery] = useState("");
   const [display, setDisplay] = useState<"image" | "name">("image");
+  const monsterTypes = series.find((item) => item.key === monster)?.weaponTypes ?? [];
+  const choose = (nextType: string, nextMonster: string) => {
+    setType(nextType); setMonster(nextMonster);
+    if (nextType && nextMonster) onPick(`${nextMonster}::${nextType}`);
+  };
   return <>
     <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1 mb-2 max-[620px]:grid max-[620px]:grid-cols-7">
-      {ALL_WEAPON_TYPES.map((option) => { const on = type === option; return <button key={option} aria-pressed={on} title={WEAPON_NAMES[option]} aria-label={WEAPON_NAMES[option]}
-        onClick={() => {
-          setType(option);
-          if (currentKey && series.find((item) => item.key === currentKey)?.weaponTypes.includes(option)) onPick(`${currentKey}::${option}`);
-        }}
-        className={cx("w-[var(--ic-btn)] h-[var(--ic-btn)] max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
+      {ALL_WEAPON_TYPES.map((option) => { const on = type === option; const available = !monster || monsterTypes.includes(option);
+        return <button key={option} aria-pressed={on} disabled={!available} title={WEAPON_NAMES[option]} aria-label={WEAPON_NAMES[option]}
+        onClick={() => choose(on ? "" : option, monster)}
+        className={cx("w-[var(--ic-btn)] h-[var(--ic-btn)] max-[620px]:w-full max-[620px]:h-auto max-[620px]:aspect-square p-0 rounded border flex items-center justify-center cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed", on ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
         <span aria-hidden="true" className={cx("block w-[var(--ic)] h-[var(--ic)] max-[620px]:w-[70%] max-[620px]:h-[70%]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[option])})` }} />
       </button>; })}
     </div>
-    {type ? <MonsterPicker series={series.filter((item) => item.weaponTypes.includes(type)).map((item) => ({ ...item, name: weaponSeriesName(item.key, type, item.name) }))}
-      value={currentType === type ? currentKey : ""} icons={iconsForWeapon(icons, type)} compact
-      display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => onPick(`${key}::${type}`)} />
-      : null}
+    <MonsterPicker series={type ? series.filter((item) => item.weaponTypes.includes(type)).map((item) => ({ ...item, name: weaponSeriesName(item.key, type, item.name) })) : series}
+      value={monster} icons={type ? iconsForWeapon(icons, type) : icons} compact
+      display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => choose(type, monster === key ? "" : key)} />
   </>;
 }
 
@@ -369,13 +375,14 @@ function SkillTiers({ entries, slotGrades }: { entries: SeriesSkill[]; slotGrade
 
 /** 選漂流石技能：顏色分頁＋技能清單；稀有技能標 ★，神秘依組別列出。 */
 /** 漂流石顏色分頁（選技能視窗與查詢頁共用）；big 是查詢頁的大尺寸。 */
-function DriftTabs({ tabs, value, onChange, big }: { tabs: { key: string; label: string }[]; value: string; onChange: (key: string) => void; big?: boolean }) {
+function DriftTabs({ tabs, value, onChange, big, trailing }: { tabs: { key: string; label: string }[]; value: string; onChange: (key: string) => void; big?: boolean; trailing?: ReactNode }) {
   return <div className="flex flex-wrap gap-1.5 mb-2.5">
     {tabs.map((item) => <button key={item.key} onClick={() => onChange(item.key)}
       className={cx("inline-flex items-center gap-[5px] border rounded-full cursor-pointer", big ? "py-[7px] px-3 fs-lg" : "py-[5px] px-2.5 fs-md",
         value === item.key ? "border-[#39423a] bg-[#39423a] text-white" : "border-[#e3dac6] bg-[#fffaf0] text-[#39423a]")}>
       <i className="w-2.5 h-2.5 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,.18)]" style={{ background: item.key === "common" ? RAINBOW_CSS : DRIFT_DOT[item.key] }} />{item.label}
     </button>)}
+    {trailing}
   </div>;
 }
 
@@ -389,7 +396,8 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
     {name}{rare ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}
   </button>;
   return <div>
-    <DriftTabs tabs={[...data.colors.map((item) => ({ key: item.key, label: item.label })), { key: "common", label: "共通" }, { key: "event", label: "神秘" }]} value={tab} onChange={setTab} />
+    <DriftTabs tabs={[...data.colors.map((item) => ({ key: item.key, label: item.label })), { key: "common", label: "共通" }, { key: "event", label: "神秘" }]} value={tab} onChange={setTab}
+      trailing={current ? <button className="py-[5px] px-2.5 border border-[#e3b8b4] rounded-full bg-white text-[#b23a30] fs-md cursor-pointer" onClick={() => onPick(null)}>清除</button> : null} />
     <div className="flex flex-wrap gap-1.5">
       {/* 六色與共通依技能分類列出；神秘漂流石本來就依活動分組，維持原樣。 */}
       {color ? <SkillGroups names={color.skills.map((skill) => skill.name)} renderSkill={(name) => skillButton(name, color.skills.find((skill) => skill.name === name)?.rare, true)} /> : null}
@@ -398,7 +406,6 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
         <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] fs-sm">{group.label}</small>{group.skills.map((name) => skillButton(name, mixedRare(group, name)))}
       </div>) : null}
     </div>
-    {current ? <button className="mt-3 py-1.5 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] fs-md cursor-pointer" onClick={() => onPick(null)}>清除這個洞</button> : null}
   </div>;
 }
 
@@ -417,32 +424,41 @@ function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; ic
   return <div>
     <DriftTabs big tabs={chips} value={tab} onChange={setTab} />
     {color ? <>
-      <section className={panel}>
-        <h3 className={panelTitle}>來源魔物（{color.sources.length}）</h3>
-        <div>
-          {color.sources.map((source) => <p key={source.key} className="flex items-center gap-2 m-0 py-[5px] border-b border-[#f1efe8] last:border-b-0">
-            <span className={cx("w-[var(--ic)] h-[var(--ic)] flex-none", BG_ICON)} style={icons[source.key] ? { backgroundImage: `url(${assetPath(icons[source.key])})` } : undefined} />
-            <strong className="fs-lg">{source.name}</strong>
-            <small className="ml-auto text-[#8b938c] fs-md">{source.parts ? source.parts.join("、") : "掉落部位未收錄"}</small>
+      {/* 寬螢幕左右並排：左邊來源魔物、右邊技能池；手機維持上下。 */}
+      <div className="grid gap-x-3 min-[760px]:grid-cols-2 items-start">
+        <section className={panel}>
+          <h3 className={panelTitle}>來源魔物（{color.sources.length}）</h3>
+          <div>
+            {color.sources.map((source) => <p key={source.key} className="flex items-center gap-2 m-0 py-[5px] border-b border-[#f1efe8] last:border-b-0">
+              <span className={cx("w-[var(--ic)] h-[var(--ic)] flex-none", BG_ICON)} style={icons[source.key] ? { backgroundImage: `url(${assetPath(icons[source.key])})` } : undefined} />
+              <strong className="fs-lg">{source.name}</strong>
+              <small className="ml-auto text-[#8b938c] fs-md">{source.parts ? source.parts.join("、") : "掉落部位未收錄"}</small>
+            </p>)}
+          </div>
+        </section>
+        <section className={panel}>
+          <h3 className={panelTitle}>技能池</h3>
+          {color.skills.map((skill) => <p key={skill.name} className={cx(row, "py-1.5 border-b border-[#f1efe8]")}>
+            <span>{skillName(skill.name)}{skill.rare ? <em className="ml-2 py-px px-1.5 rounded bg-[#fff3dc] text-[#e08a00] not-italic fs-sm font-bold">稀有</em> : null}</span>
+            <b className={cx("tabular-nums", skill.rare ? "text-[#e08a00]" : "text-[#39423a]")}>{skill.chance.toFixed(1)}%</b>
           </p>)}
-        </div>
-      </section>
-      <section className={panel}>
-        <h3 className={panelTitle}>技能池</h3>
-        {color.skills.map((skill) => <p key={skill.name} className={cx(row, "py-1.5 border-b border-[#f1efe8]")}>
-          <span>{skillName(skill.name)}{skill.rare ? <em className="ml-2 py-px px-1.5 rounded bg-[#fff3dc] text-[#e08a00] not-italic fs-sm font-bold">稀有</em> : null}</span>
-          <b className={cx("tabular-nums", skill.rare ? "text-[#e08a00]" : "text-[#39423a]")}>{skill.chance.toFixed(1)}%</b>
-        </p>)}
-        <p className={cx(row, "pt-2.5 pb-1.5 text-[#6d756e]")}><span>共通技能（{data.common.length} 個）</span><b className="tabular-nums text-[#39423a]">各 {color.commonChance.toFixed(1)}%</b></p>
-        {chipList}
-      </section>
-      <p className={NOTE}>機率照 mhn.quest 畫面上的算法：稀有技能平分 10%，其餘（共通＋這個顏色的非稀有）平分 90%。</p>
+          <p className={cx(row, "pt-2.5 pb-1.5 text-[#6d756e]")}><span>共通技能（{data.common.length} 個）</span><b className="tabular-nums text-[#39423a]">各 {color.commonChance.toFixed(1)}%</b></p>
+          {chipList}
+        </section>
+      </div>
+      <p className={NOTE}>粗估稀有技能平分 10%，其餘（共通＋這個顏色的非稀有）平分 90%</p>
     </> : null}
-    {tab === "common" ? <section className={panel}><h3 className={panelTitle}>共通技能（{data.common.length}）</h3>{chipList}<p className={NOTE}>每種顏色的漂流石都可能出現共通技能，機率看顏色，請到各顏色頁查看。</p></section> : null}
-    {tab === "event" ? <section className={panel}><h3 className={panelTitle}>神秘漂流石（{data.events.length} 組）</h3>{data.events.map((group) => <p key={group.key} className="flex gap-2.5 m-0 py-1.5 border-b border-[#f1efe8] fs-md leading-[1.6]">
-      <small className="flex-[0_0_52px] text-[#8b5fc7] font-bold fs-md">{group.label}</small>
-      <span className="flex flex-wrap gap-x-3 gap-y-0">{group.skills.map((name) => <span key={name}>{skillName(name)}{mixedRare(group, name) ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}</span>)}</span>
-    </p>)}<p className={NOTE}>來源資料沒有神秘漂流石的取得方式與機率。</p></section> : null}
+    {tab === "common" ? <section className={panel}><h3 className={panelTitle}>共通技能（{data.common.length}）</h3>{chipList}</section> : null}
+    {/* 神秘漂流石組數多：每組一張小卡，依寬度自動排成 2～5 欄。 */}
+    {tab === "event" ? <section>
+      <h3 className={cx(panelTitle, "mt-0")}>神秘漂流石（{data.events.length} 組）</h3>
+      <div className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] min-[760px]:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+        {data.events.map((group) => <div key={group.key} className="bg-white border border-[#dfe2dc] rounded-[9px] py-2 px-3">
+          <p className="m-0 mb-1 text-[#8b5fc7] font-bold fs-md">{group.label}</p>
+          <ul className="list-none m-0 p-0 flex flex-col gap-0.5 fs-md leading-[1.6]">{group.skills.map((name) => <li key={name}>{skillName(name)}{mixedRare(group, name) ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}</li>)}</ul>
+        </div>)}
+      </div>
+    </section> : null}
   </div>;
 }
 
@@ -645,8 +661,8 @@ function MissingSummary({ builds, settings, onChange, total, loading, monsterNam
     </div></> : null}
     </div>
     {loading ? <p className={cx(NOTE, "m-0")}>還有 {loading} 件裝備的升級資料載入中……</p> : null}
-    {!total.pieces && !loading ? <p className={cx(NOTE, "m-0")}>勾選的配裝裡還沒有設定目標階級的裝備。展開裝備、選好目標階級就會算進來。</p>
-      : present.length && !visible.length ? <p className={cx(NOTE, "m-0")}>勾選的素材類別目前都不缺；點上面的類別可以顯示其他素材。</p>
+    {!total.pieces && !loading ? null
+      : present.length && !visible.length ? null
         // 由上往下排再換欄（不是左右排），同一隻魔物的素材才會連成一塊。
         : <div className="columns-[210px] gap-x-5">{visible.map((item) => <p key={item.name}
           className="flex justify-between items-center gap-2 m-0 py-1 border-b border-[#f1ebdc] fs-md text-[#2b332c] break-inside-avoid">
@@ -661,7 +677,6 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
   const target = resolveTarget(rows, value, allowNone);
   const total = calculateRange(rows, value.current, target);
   const steps = rowsInRange(rows, value.current, target);
-  const hasUnknown = total.materials.some((item) => item.unknown);
   function changeCurrent(next: string) {
     const nextIndex = next === "unforged" ? -1 : rows.findIndex((row) => row.grade === next);
     // 目前階級升到目標（含）之後：配裝回到「不升級」，計算器則把目標推到下一階。
@@ -688,13 +703,12 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
         </div>
       </div>)}
     </section>}
-    {!target ? <p className={cx(NOTE, "m-0")}>不升級：不計算素材。要規劃升級時再選目標階級。</p> : <>
+    {!target ? null : <>
     <div className={cx("flex items-baseline", compact ? "mt-0 mx-0 mb-2 py-2 px-3 gap-2 rounded-[7px] bg-[#f3eee2] text-[#2b332c]" : "my-5 mx-0 py-[17px] px-5 gap-3 rounded-lg bg-[#28352e] text-white")}>
       <span className={compact ? "fs-sm" : "fs-md"}>所需 Zenny</span>
       <strong className={cx("ml-auto font-bold tabular-nums", compact ? "fs-xl text-[#e08a00]" : "text-[31px]")}>{total.zenny.toLocaleString()}</strong>
       <small className={compact ? "fs-sm text-[#8b938c]" : "fs-md text-[#bac3bc]"}>{total.materials.length} 種素材</small>
     </div>
-    {hasUnknown ? <p className={compact ? "mt-0 mx-0 mb-2 fs-sm text-[#858d86] leading-[1.7]" : NOTE}>部分階級有素材尚未辨識，暫時顯示原始代碼（如「ib」），詳見 docs/mhnow-待確認事項.md。</p> : null}
     <section className={cx("bg-white border border-[#dfe2dc] overflow-hidden", compact ? "m-0 rounded-[7px]" : "mb-4 rounded-[9px]")}>
       <h3 className={compact ? "hidden" : "fs-lg m-0 py-[15px] px-[18px] border-b border-[#e5e7e2]"}>素材總計</h3>
       <div className={cx("grid", compact ? "grid-cols-[1fr] py-0.5 px-2.5" : "grid-cols-[1fr_1fr] py-1.5 px-[18px] max-[720px]:grid-cols-[1fr]")}>{total.materials.map((item) => <p key={item.name}
@@ -927,7 +941,6 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
           {row.traits ? <><h4 className={h4(true)}>武器特性</h4><TraitDetail traits={row.traits} /></> : null}
           {row.entries.length || row.slotGrades.length ? <>{row.traits ? <h4 className={h4()}>技能解鎖</h4> : null}<SkillTiers entries={row.entries} slotGrades={row.slotGrades} /></> : null}
           <h4 className={h4()}>升級素材（單件）</h4>
-          {waived ? <p className={cx(NOTE, "mt-0 mb-1.5 text-[#087b84]")}>素材減免中：不計採集素材與尖爪。</p> : null}
           {!gradeRows ? <p className={NOTE}>升級資料載入中……</p>
             : !gradeRows.length ? <p className={NOTE}>這件裝備沒有升級資料。</p>
               : <GradeRangeCost compact allowNone rows={gradeRows} value={piece} targetForCurrent={(current) => automaticTarget(row.id, row.entries, current, Number(gradeRows[0].grade.split("-")[0]))}
@@ -959,7 +972,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
           </div>
         </button>;
       })}</div>
-    </section> : <p className={cx(NOTE, "m-0 px-1")}>點上面的格子開始配裝：武器要選魔物與武器種類，防具選魔物即可。</p>}
+    </section> : null}
     {footer}
   </article>;
 }
@@ -1134,7 +1147,6 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
   };
 
   return <div ref={wrap} className="flex flex-col gap-5">
-    {!entries.length ? <p className={NOTE}>還沒有裝備。到「配裝」頁幫裝備輸入「目前階級」，就會出現在這裡；同一件裝備在每組配裝都是同一個階級，漂流石也記在裝備上。</p> : null}
     {weapons.length ? <section aria-label="武器">
       {heading("武器", weapons.length, segmented("武器排列方式", [["monster", "依魔物"], ["type", "依種類"]] as ["monster" | "type", string][], weaponView, (next) => choose({ weapon: next })))}
       {weaponView === "monster"
@@ -1460,7 +1472,6 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
         const total = totalMissing(pieces.flatMap((piece) => piece.rows?.length ? [{ ...piece, rows: piece.rows }] : []));
         return <>
           <h3 className="fs-md mt-0">合併需求 · {total.pieces} 件 · Zenny {total.zenny.toLocaleString()}</h3>
-          <p className={NOTE}>此處列出這隻魔物所有待製作裝備；各件的勾選只控制是否納入頁面上的素材總統計。</p>
           {pending || failed ? <p role="status" className={NOTE}>{pending ? "部分資料載入中，合計尚未完整。" : "部分升級資料無法取得，合計尚未完整。"}</p> : null}
           <div className="grid gap-1 sm:grid-cols-2">{total.materials.map((item) => <div key={item.name} className="flex justify-between gap-2 fs-md bg-[#f4f5ef] rounded px-2 py-1"><span>{item.name}</span><b>× {item.quantity.toLocaleString()}</b></div>)}</div>
           {items.map((plan) => <section key={plannedGearId(plan)} className="border-t border-[#e3e6dc] mt-3 pt-2"><h4 className="fs-md my-1">{titleOf(plan)} · {plan.current === "unforged" ? "未製作" : plan.current} → {plan.target || "不升級"}</h4><MissingMaterials rows={ctx.gradeRowsFor(plan.series, plan.slot === "weapon" ? plan.weaponType! : "armor")} range={plan} waived={plan.slot === "weapon" && ctx.discounted.includes(plan.series)} /></section>)}
@@ -1483,7 +1494,6 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
           <SkillTiers entries={entriesFor(plan)} slotGrades={plan.slot === "weapon" ? [] : series.find((item) => item.key === plan.series)?.slots?.[plan.slot]} />
         </button>;
       })}</div>
-      {!candidates.length ? <p className={NOTE}>選擇魔物，或輸入技能、武器特色以加入裝備。</p> : null}
     </Modal> : null}
   </section>;
 }
@@ -1845,7 +1855,6 @@ export default function MhnowApp() {
           return { ...next, gear };
         })} />) : null}
       {discountPickerOpen ? <Modal title={`素材減免（已選 ${discounted.length}）`} onClose={() => setDiscountPickerOpen(false)}>
-        <p className={cx(NOTE, "mt-0 mb-2")}>點魔物加入或取消。選了的魔物，所有武器升級都不需要採集素材（含尖爪）；防具不受影響。只套用在裝備配置與素材統計。</p>
         <MonsterPicker series={weaponSeries} value={discounted} onPick={toggleDiscount} icons={icons} display={display} onDisplay={setDisplay} query={discountQuery} onQuery={setDiscountQuery} />
         <div className="flex gap-2 mt-3">
           <button disabled={!discounted.length} onClick={() => setDiscounted([])} className="py-2 px-3 rounded-lg border border-[#cfc7b4] bg-white fs-md cursor-pointer disabled:opacity-50 disabled:cursor-default">全部清除</button>
@@ -1904,7 +1913,6 @@ export default function MhnowApp() {
             ...(seriesBy[calcSeries].hasArmor ? [{ id: `${calcSeries}::armor`, title: "防具", subtitle: "五個部位共用同一份素材表", icon: ARMOR_ICON.mail }] : []),
             ...seriesBy[calcSeries].weaponTypes.map((type) => ({ id: `${calcSeries}::${type}`, title: weaponTypeName(type), subtitle: "武器", icon: WEAPON_ICON[type] })),
           ]} /> : null}
-        {!calcKind ? <p className={NOTE}>選一隻魔物，再選要算防具還是哪一種武器。</p> : null}
       </Modal> : null}
 
       {calcKind ? <section className="min-w-0">
@@ -1912,14 +1920,13 @@ export default function MhnowApp() {
           <div className="flex justify-between items-end pt-4 pb-6 px-0 border-b border-[#d9ddd6] max-[720px]:pt-[26px]"><div className="text-right">
             <span className="block fs-md tracking-[1.5px] text-[#8a928b]">{calcKind === "armor" ? "ARMOR" : "WEAPON"}</span>
             <h2 className="text-[34px] my-[7px] mx-0 max-[720px]:text-[28px]">{seriesBy[calcSeries]?.name}{calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}</h2>
-            <p className="fs-lg text-[#747c75] m-0">{calcKind === "armor" ? "以下是單一部位所需素材，整套五件請再乘上件數。" : "以下是該武器由目前階級升到目標階級所需素材。"}</p>
           </div></div>
           <GradeRangeCost rows={calcRows} value={calcRange} onChange={setCalcRange} />
         </>}
       </section> : null}
     </section>
 
-    : <section className={PAGE}>
+    : <section className="max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
       <PageHeading eyebrow="DRIFTSTONE" title="漂流石" description="選顏色看來源魔物、技能與出現機率。配裝頁點裝備列右邊的 ⬡ 可以替每個洞挑技能。" />
       <DriftstoneView data={driftstones} icons={icons} onSkill={(name) => setSkillTip({ name, level: 0 })} />
     </section>}
@@ -1931,7 +1938,6 @@ export default function MhnowApp() {
       const me = toMhnowMeLink(build, (key) => seriesBy[key]?.name ?? key);
       return <Modal key={build.id} title={`分享「${build.name || "未命名"}」`} narrow onClose={() => setSharing(null)}>
         <div className="flex justify-center p-2 mb-2 rounded-lg border border-[#e3dac6]"><QrCode text={link} /></div>
-        <p className={cx(NOTE, "mt-0 mb-2")}>對方用手機相機掃描就能打開並加入這組配裝；或把分享碼傳給對方，在「貼上分享碼」貼上。只分享裝備與漂流石，不含升級進度。</p>
         <textarea readOnly aria-label="分享碼" value={code} rows={3} onFocus={(event) => event.currentTarget.select()}
           className="block w-full box-border p-2 mb-2 border border-[#d8d0bd] rounded-md bg-[#f8f8f5] fs-sm font-mono break-all resize-none" />
         <div className="flex gap-2">
@@ -1939,7 +1945,6 @@ export default function MhnowApp() {
           <button onClick={() => void copyShare("link", link)} className={copyButton}>{copied === "link" ? "✓ 已複製連結" : "複製連結"}</button>
         </div>
         <div className="mt-3 pt-3 border-t border-dashed border-[#e3dac6]">
-          <p className={cx(NOTE, "mt-0 mb-2")}>mhnow.me 連結：貼到 mhnow.me 的模擬器就能打開（只含裝備與漂流石）。</p>
           {"url" in me ? <button onClick={() => void copyShare("me", me.url)} className={cx(copyButton, "w-full")}>{copied === "me" ? "✓ 已複製 mhnow.me 連結" : "複製 mhnow.me 連結"}</button>
             : <p className="m-0 fs-md text-[#b23a30]">{me.error}</p>}
         </div>
@@ -1982,7 +1987,7 @@ export default function MhnowApp() {
         <button disabled={builds.builds.length >= MAX_BUILDS} onClick={() => applyImport("append")}
           className="py-2 px-3 border border-[#cfc7b4] rounded-lg bg-white text-[#2b332c] fs-md text-left cursor-pointer hover:border-[#9aa39b] disabled:cursor-default">
           <b>加在後面</b><small className="block fs-sm text-[#8b938c]">{builds.builds.length >= MAX_BUILDS ? `已經有 ${MAX_BUILDS} 組，放不下了`
-            : builds.builds.length + importing.state.builds.length > MAX_BUILDS ? `保留現在的，最多只能再加 ${MAX_BUILDS - builds.builds.length} 組` : "保留現在的配裝，檔案裡的接在後面"}</small></button>
+            : builds.builds.length + importing.state.builds.length > MAX_BUILDS ? `保留現在的，最多只能再加 ${MAX_BUILDS - builds.builds.length} 組` : "保留現在的配裝，並將新紀錄置於最後"}</small></button>
       </div>
     </Modal> : null}
 
@@ -2006,14 +2011,12 @@ export default function MhnowApp() {
         const learned = builds.forged?.[id] ?? [];
         const now = target.drifts[driftPick.slot]?.[driftPick.index] ?? null;
         const assign = (pick: DriftPick) => { changeBuild(driftPick.build)((build) => { const picks = [...(build.drifts[driftPick.slot] ?? [])]; picks[driftPick.index] = pick; return { ...build, drifts: { ...build.drifts, [driftPick.slot]: picks } }; }); setDriftPick(null); };
-        return <div className="mb-3 p-2 rounded-lg bg-[#f6fbfb] border border-[#bfe1de]">
-          <p className="m-0 mb-1.5 fs-md font-bold text-[#1f4f4c]">這件裝備已練成的漂流石</p>
+        if (!learned.length && !now) return null;
+        return <div className="mb-3 p-2 rounded-lg bg-[#f6fbfb] border border-[#bfe1de] flex flex-col gap-2">
           {learned.length ? <div className="flex flex-wrap gap-1">{learned.map((skill) => <button key={skill} onClick={() => assign({ skill, color: now?.skill === skill ? now.color : "" })}
-            className={cx("py-1 px-2.5 border rounded-lg fs-md cursor-pointer", now?.skill === skill ? "border-[#e08a00] bg-[#fff3dc]" : "border-[#bfe1de] bg-white hover:border-[#099aa5]")}>{skill}</button>)}</div>
-            : <p className={cx(NOTE, "m-0")}>還沒有。選好技能後，在下面勾選「已練成」。</p>}
-          {now ? <label className="flex items-center gap-1.5 mt-2 fs-md text-[#2b332c] cursor-pointer"><input type="checkbox" checked={learned.includes(now.skill)}
+            className={cx("py-1 px-2.5 border rounded-lg fs-md cursor-pointer", now?.skill === skill ? "border-[#e08a00] bg-[#fff3dc]" : "border-[#bfe1de] bg-white hover:border-[#099aa5]")}>{skill}</button>)}</div> : null}
+          {now ? <label className="flex items-center gap-1.5 fs-md text-[#2b332c] cursor-pointer"><input type="checkbox" checked={learned.includes(now.skill)}
             onChange={(event) => setBuilds((state) => setForged(state, id, now.skill, event.target.checked))} />「{now.skill}」這件裝備已經練成</label> : null}
-          <p className={cx(NOTE, "m-0 mt-1")}>一件裝備可以練出很多種漂流石並自由更換：點上面已練成的就直接鑲上；下面挑的是還沒練成的。</p>
         </div>;
       })()}
       <DriftstonePicker data={driftstones} current={builds.builds.find((build) => build.id === driftPick.build)?.drifts[driftPick.slot]?.[driftPick.index] ?? null}
@@ -2021,7 +2024,6 @@ export default function MhnowApp() {
           changeBuild(driftPick.build)((build) => { const picks = [...(build.drifts[driftPick.slot] ?? [])]; picks[driftPick.index] = pick; return { ...build, drifts: { ...build.drifts, [driftPick.slot]: picks } }; });
           setDriftPick(null);
         }} />
-      <p className={NOTE}>每個洞的漂流石提供 {DRIFT_LEVEL} 級（來源資料沒寫等級，先照此計算）。</p>
     </Modal> : null}
   </main>;
 }
