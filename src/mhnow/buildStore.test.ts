@@ -146,6 +146,20 @@ describe("appendBuilds", () => {
 });
 
 describe("shared current grade", () => {
+  it("saves standalone weapon and armor registrations before any loadout uses them", () => {
+    const initial = initialBuildState();
+    const weaponId = gearId("weapon", "kulu::long-sword");
+    const helmId = gearId("helm", "kulu::armor");
+    const state = setOwnedGrade(setOwnedGrade(initial, weaponId, "3-1"), helmId, "2-1");
+    expect(state.builds).toEqual(initial.builds);
+    const restored = parseBuildState(serializeBuildState(state));
+    expect(restored.owned).toEqual({ [weaponId]: "3-1", [helmId]: "2-1" });
+    const equipped = updateBuild(restored, restored.active, (build) => ({ ...build, gear: { weapon: "kulu::long-sword", helm: "kulu" } }));
+    expect(pieceOf(equipped.builds[0], "weapon", "kulu::long-sword").current).toBe("3-1");
+    expect(pieceOf(equipped.builds[0], "helm", "kulu::armor").current).toBe("2-1");
+    expect(pieceOf(equipped.builds[0], "mail", "kulu::armor").current).toBe("unforged");
+  });
+
   const wear = (state: ReturnType<typeof repeat>, index: number, helm: string, drift?: string) => updateBuild(state, state.builds[index].id, (build) => ({
     ...build, gear: { ...build.gear, helm }, drifts: drift ? { helm: [{ skill: drift, color: "" }] } : build.drifts }));
   const grade = (state: ReturnType<typeof repeat>, index: number) => pieceOf(state.builds[index], "helm", "kulu::armor").current;

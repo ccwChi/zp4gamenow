@@ -9,7 +9,7 @@
 /* 放在 base layer，utility class 才蓋得過（沒分層的樣式在 CSS layers 裡優先權最高）。 */
 @layer base {
   *{box-sizing:border-box}
-  :root{color-scheme:light}
+  :root{color-scheme:light;--app-scale:.9;zoom:var(--app-scale)}
   body{margin:0;font-family:Arial,"Microsoft JhengHei",sans-serif}
   button,a,input{-webkit-tap-highlight-color:transparent}
   button{font:inherit;cursor:pointer}
@@ -35,6 +35,7 @@
   .fs-xl{font-size:var(--fs-xl)}
 }
 
-/* 選擇畫面（選武器、選魔物、選裝備…）的圖示大小統一：魔物與武器種類 32px、按鈕外框 40px、部位小圖示 24px。
+/* 選擇畫面（選武器、選魔物、選裝備…）的圖示統一放大至原本的 125%：
+   魔物與武器種類 40px、按鈕外框 50px、部位小圖示 30px。
    配裝主畫面的圖示是另外的大小，不受影響。 */
-:root{--ic:32px;--ic-btn:40px;--ic-slot:24px}
+:root{--ic:40px;--ic-btn:50px;--ic-slot:30px}

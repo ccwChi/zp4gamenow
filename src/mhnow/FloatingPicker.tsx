@@ -34,10 +34,17 @@ export function mobileBounds(width: number, height: number): Bounds {
   return { x: 8, y: 8, width: Math.max(1, width - 16), height: Math.max(1, height - 16) };
 }
 
+/** CSS zoom scales layout coordinates; pointer and viewport sizes stay in screen CSS pixels. */
+function viewport() {
+  const scale = Number(getComputedStyle(document.documentElement).getPropertyValue("--app-scale")) || 1;
+  return { width: window.innerWidth / scale, height: window.innerHeight / scale, scale };
+}
+
 function defaultBounds(): Bounds {
-  const width = Math.min(760, window.innerWidth - 32);
-  const height = window.innerHeight * 0.8;
-  return fitBounds({ x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2, width, height }, window.innerWidth, window.innerHeight);
+  const view = viewport();
+  const width = Math.min(760, view.width - 32);
+  const height = view.height * 0.8;
+  return fitBounds({ x: (view.width - width) / 2, y: (view.height - height) / 2, width, height }, view.width, view.height);
 }
 
 function isBounds(value: unknown): value is Bounds {
@@ -73,22 +80,24 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
   const desktop = useRef<Bounds | null>(null);
 
   useEffect(() => {
+    const view = viewport();
     let initial = defaultBounds();
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
       if (isBounds(saved)) {
-        initial = fitBounds(saved, window.innerWidth, window.innerHeight);
+        initial = fitBounds(saved, view.width, view.height);
         setRemember(true);
       }
     } catch { /* Invalid or unavailable storage uses the default window. */ }
     // 清除資料會重新掛載視窗；這次開著網頁期間拖過的位置沿用，視窗才不會跳回預設位置。
-    if (sessionBounds) initial = fitBounds(sessionBounds, window.innerWidth, window.innerHeight);
+    if (sessionBounds) initial = fitBounds(sessionBounds, view.width, view.height);
     desktop.current = initial;
     const media = window.matchMedia(MOBILE_QUERY);
     const layout = () => {
+      const view = viewport();
       setMobile(media.matches);
-      if (media.matches) setBounds(mobileBounds(window.innerWidth, window.innerHeight));
-      else setBounds(fitBounds(desktop.current ?? defaultBounds(), window.innerWidth, window.innerHeight));
+      if (media.matches) setBounds(mobileBounds(view.width, view.height));
+      else setBounds(fitBounds(desktop.current ?? defaultBounds(), view.width, view.height));
     };
     layout();
     window.addEventListener("resize", layout);
@@ -116,17 +125,18 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
   function move(event: PointerEvent<HTMLElement>) {
     const active = gesture.current;
     if (!active) return;
-    const dx = event.clientX - active.x;
-    const dy = event.clientY - active.y;
+    const view = viewport();
+    const dx = (event.clientX - active.x) / view.scale;
+    const dy = (event.clientY - active.y) / view.scale;
     const next = active.mode === "move"
       ? { ...active.bounds, x: active.bounds.x + dx, y: active.bounds.y + dy }
       : { ...active.bounds, width: active.bounds.width + dx, height: active.bounds.height + dy };
     // Keep the top-left corner stable when resizing near the viewport edges.
     if (active.mode === "resize") {
-      next.width = Math.min(next.width, window.innerWidth - next.x - 8);
-      next.height = Math.min(next.height, window.innerHeight - next.y - 8);
+      next.width = Math.min(next.width, view.width - next.x - 8);
+      next.height = Math.min(next.height, view.height - next.y - 8);
     }
-    setBounds(fitBounds(next, window.innerWidth, window.innerHeight));
+    setBounds(fitBounds(next, view.width, view.height));
   }
   const handlers = {
     onPointerMove: move,
@@ -153,7 +163,7 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
           onKeyDown={(event) => {
             const offsets: Record<string, [number, number]> = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] };
             const offset = offsets[event.key];
-            if (offset) { event.preventDefault(); setBounds(fitBounds({ ...bounds, x: bounds.x + offset[0], y: bounds.y + offset[1] }, window.innerWidth, window.innerHeight)); }
+            if (offset) { event.preventDefault(); const view = viewport(); setBounds(fitBounds({ ...bounds, x: bounds.x + offset[0], y: bounds.y + offset[1] }, view.width, view.height)); }
           }} title="拖曳移動視窗；也可聚焦後使用方向鍵" className="flex-1 min-w-0 p-3 text-left font-bold fs-lg border-0 bg-transparent cursor-move touch-none select-none truncate">{title}</button>}
       {!mobile ? <>
         <label title={storageError ? "瀏覽器無法儲存視窗設定" : "下次打開時沿用現在的大小與位置"}
@@ -175,7 +185,7 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
         onKeyDown={(event) => {
           const offsets: Record<string, [number, number]> = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] };
           const offset = offsets[event.key];
-          if (offset) { event.preventDefault(); setBounds(fitBounds({ ...bounds, width: bounds.width + offset[0], height: bounds.height + offset[1] }, window.innerWidth, window.innerHeight)); }
+          if (offset) { event.preventDefault(); const view = viewport(); setBounds(fitBounds({ ...bounds, width: bounds.width + offset[0], height: bounds.height + offset[1] }, view.width, view.height)); }
         }} className="absolute right-0 bottom-0 w-8 h-6 border-0 bg-transparent cursor-nwse-resize touch-none select-none">◢</button>
     </div>}
   </div></div>;

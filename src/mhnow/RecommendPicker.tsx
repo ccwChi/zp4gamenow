@@ -78,8 +78,8 @@ const NO_CALLOUT = "select-none [-webkit-touch-callout:none]";
 
 /** 圖示；沒有圖時顯示 fallback 文字的第一個字（例如魔物名稱）。 */
 /** 選擇畫面裡的圖示大小：魔物／武器種類一律 IC，部位小圖示一律 IC_SLOT（對應 globals.css 的 --ic、--ic-slot）。 */
-const IC = 32, IC_SLOT = 24;
-function Icon({ src, size, title, fallback }: { src?: string; size: number; title?: string; fallback?: string }) {
+const IC = "var(--ic)", IC_SLOT = "var(--ic-slot)";
+function Icon({ src, size, title, fallback }: { src?: string; size: string; title?: string; fallback?: string }) {
   return <span title={title} aria-hidden={title ? undefined : true} className={cx("flex shrink-0 items-center justify-center rounded fs-sm font-bold text-[#5b635c]", BG_ICON, !src && fallback && "bg-[#f1f2ef]")}
     style={{ width: size, height: size, backgroundImage: src ? `url(${assetPath(src)})` : undefined }}>{!src && fallback ? fallback.slice(0, 1) : null}</span>;
 }

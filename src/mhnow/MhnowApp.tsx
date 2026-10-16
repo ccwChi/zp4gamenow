@@ -96,7 +96,7 @@ const NOTE = "fs-md text-[#858d86] leading-[1.7]";
 /** 裝備列名稱下的小字行（技能、漂流石、武器特性），顏色各自加。 */
 const GEAR_SMALL = "flex flex-wrap gap-x-2.5 gap-y-0.5 fs-md";
 /** 不滿版：整頁收成一欄固定寬度置中（仿 mhnow.me）；內容寬 360px（一組裝備的寬度），左右各留 16px（手機 8px）。 */
-const PAGE = "max-w-[392px] mx-auto my-4 px-4 pt-0 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7";
+const PAGE = "max-w-[1200px] mx-auto my-4 px-4 pt-0 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7";
 
 /** 各頁標題：英文眉標＋標題。說明文字在 360px 寬放不下，保留在 DOM 但不顯示。 */
 function PageHeading({ eyebrow, title, description, hint }: { eyebrow?: string; title: string; description?: string; hint?: string }) {
@@ -693,16 +693,6 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
       <span className={compact ? "pb-1.5" : "pb-2.5"}>→</span>
       <label className={label}>目標階級<select className={select} value={target} onChange={(event) => onChange({ ...value, target: event.target.value })}>{allowNone ? <option value="">不升級</option> : null}{rows.filter((row, position) => position > currentIndex).map((row) => <option key={row.grade}>{row.grade}</option>)}</select></label>
     </div>
-    {compact ? null : <section className="mt-0 mx-0 mb-4 bg-white border border-[#dfe2dc] rounded-[9px] overflow-hidden">
-      <h3 className="fs-lg m-0 py-3 px-3.5 border-b border-[#e5e7e2]">逐階明細（{steps.length} 階）</h3>
-      {steps.map((row, position) => <div key={row.grade} className="grid grid-cols-[48px_1fr] gap-2 py-[9px] px-3.5 border-b border-[#eff0ed] last:border-b-0">
-        <b className="fs-lg text-[#2b332c] leading-[1.7]">{row.grade}{value.current === "unforged" && position === 0 ? <em className="block not-italic fs-sm font-semibold text-[#e08a00] leading-[1.2]">生產</em> : null}</b>
-        <div>
-          <p className={cx(stepLine, "text-[#8b938c] [border-bottom:1px_dashed_#eee6d4] mb-0.5 pb-[3px]")}><span className="flex items-center flex-wrap">Zenny</span><strong className={cx(quantity, "text-[#2b332c]")}>{row.zenny.toLocaleString()}</strong></p>
-          {[...row.materials].sort(compareMaterials).map((item, order) => <p key={`${item.name}-${order}`} className={stepLine}><span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}</span><strong className={quantity}>× {item.quantity}</strong></p>)}
-        </div>
-      </div>)}
-    </section>}
     {!target ? null : <>
     <div className={cx("flex items-baseline", compact ? "mt-0 mx-0 mb-2 py-2 px-3 gap-2 rounded-[7px] bg-[#f3eee2] text-[#2b332c]" : "my-5 mx-0 py-[17px] px-5 gap-3 rounded-lg bg-[#28352e] text-white")}>
       <span className={compact ? "fs-sm" : "fs-md"}>所需 Zenny</span>
@@ -711,13 +701,27 @@ function GradeRangeCost({ rows, value, onChange, compact, allowNone, targetForCu
     </div>
     <section className={cx("bg-white border border-[#dfe2dc] overflow-hidden", compact ? "m-0 rounded-[7px]" : "mb-4 rounded-[9px]")}>
       <h3 className={compact ? "hidden" : "fs-lg m-0 py-[15px] px-[18px] border-b border-[#e5e7e2]"}>素材總計</h3>
-      <div className={cx("grid", compact ? "grid-cols-[1fr] py-0.5 px-2.5" : "grid-cols-[1fr_1fr] py-1.5 px-[18px] max-[720px]:grid-cols-[1fr]")}>{total.materials.map((item) => <p key={item.name}
-        className={cx("flex justify-between m-0 border-b border-[#eff0ed]", compact ? "py-1.5 fs-md" : "py-[11px] fs-md odd:mr-[22px] max-[720px]:odd:mr-0")}>
-        <span className="flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}{item.unknown ? <small className="block text-[#8a8a8a] fs-lg font-normal mt-0.5">尚未辨識</small> : null}</span>
-        <strong className={cx("font-bold tabular-nums", compact ? "fs-md" : "fs-lg")}>× {item.quantity}</strong>
+      <div className={cx("grid", compact ? "grid-cols-[1fr] py-0.5 px-2.5" : "grid-cols-1 min-[621px]:grid-cols-2 min-[1000px]:grid-cols-3 gap-x-6 py-1.5 px-[18px]")}>{total.materials.map((item) => <p key={item.name}
+        className={cx("min-w-0 flex justify-between gap-2 m-0 border-b border-[#eff0ed]", compact ? "py-1.5 fs-md" : "py-[11px] fs-md")}>
+        <span className="min-w-0 flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}{item.unknown ? <small className="block text-[#8a8a8a] fs-lg font-normal mt-0.5">尚未辨識</small> : null}</span>
+        <strong className={cx("shrink-0 font-bold tabular-nums whitespace-nowrap", compact ? "fs-md" : "fs-lg")}>× {item.quantity}</strong>
       </p>)}</div>
     </section>
     </>}
+    {compact ? null : <section className="mt-5 mb-4">
+      <h3 className="fs-lg m-0 mb-3 text-[#39423a]">逐階明細 <small className="font-normal text-[#8b938c]">{steps.length} 階</small></h3>
+      <div className="grid grid-cols-1 min-[621px]:grid-cols-2 min-[1000px]:grid-cols-3 gap-3 items-start">
+        {steps.map((row, position) => <article key={row.grade} className="min-w-0 rounded-xl border border-[#dfe2dc] bg-white overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-[#f5f7f5] border-b border-[#e5e7e2]">
+            <h4 className="m-0 flex items-center gap-2 fs-lg text-[#2b332c]">{row.grade}{value.current === "unforged" && position === 0 ? <span className="fs-sm font-semibold text-[#a66b12] bg-[#fff0ce] rounded px-1.5 py-0.5">生產</span> : null}</h4>
+            <span className="fs-sm text-[#657068]">Zenny <b className="ml-1 fs-md text-[#2b332c] tabular-nums">{row.zenny.toLocaleString()}</b></span>
+          </div>
+          <div className="px-3.5 py-2">
+            {[...row.materials].sort(compareMaterials).map((item, order) => <p key={`${item.name}-${order}`} className={cx(stepLine, "py-1")}><span className="min-w-0 flex items-center flex-wrap">{item.rare ? <Rare rare={item.rare} /> : null}{item.name}</span><strong className={quantity}>× {item.quantity}</strong></p>)}
+          </div>
+        </article>)}
+      </div>
+    </section>}
   </div>;
 }
 
@@ -848,18 +852,19 @@ function SortableBuild({ id, name, children, onMove, onStep }: {
   </div>;
 }
 
-function CurrentGradeInput({ value, title, onCommit }: { value: string; title: string; onCommit: (value: string) => void }) {
+function CurrentGradeInput({ value, title, onCommit, autoFocus = false, emptyFallback }: { value: string; title: string; onCommit: (value: string) => void; autoFocus?: boolean; emptyFallback?: string }) {
   const [draft, setDraft] = useState(value === "unforged" ? "" : value);
   const [invalid, setInvalid] = useState(false);
   useEffect(() => { setDraft(value === "unforged" ? "" : value); setInvalid(false); }, [value]);
   function commit() {
-    const next = draft.trim();
+    const next = draft.trim() || emptyFallback || "";
     if (next && !validCurrentGrade(next)) { setInvalid(true); return; }
     setInvalid(false);
     setDraft(next);
     onCommit(next || "unforged");
   }
-  return <input aria-label={`${title}目前等級`} aria-invalid={invalid} value={draft} placeholder="未設定"
+  return <input aria-label={`${title}目前等級`} aria-invalid={invalid} value={draft} placeholder="未設定" autoFocus={autoFocus}
+    onFocus={autoFocus ? (event) => event.currentTarget.select() : undefined}
     title={invalid ? "請輸入 2-1 到 10-5，例如 6-1" : "目前等級：2-1 到 10-5；Enter 或離開欄位儲存，清空表示尚未生產"}
     onChange={(event) => { setDraft(event.target.value); setInvalid(false); }} onBlur={commit}
     onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { setDraft(value === "unforged" ? "" : value); setInvalid(false); } }}
@@ -979,7 +984,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
 
 /**
  * 我的裝備庫：所有設定過「目前階級」的裝備（階級是每件裝備共用的），每件列出目前階級、這個階級的技能與洞數，
- * 以及哪幾組配裝穿著它、各自鑲了什麼漂流石。裝備是在「配裝」頁輸入目前階級後才會出現在這裡；這裡也能直接改階級。
+ * 以及哪幾組配裝穿著它、各自鑲了什麼漂流石。也能從依魔物排列的空格新增裝備、直接改階級。
  */
 /**
  * 裝備庫裡一件裝備的技能明細：
@@ -1033,12 +1038,64 @@ const GEAR_MIN_CARD = 260;
 const GEAR_MAX_COLUMNS = 5;
 const GEARBOX_VIEW_KEY = "mhnow.gearbox.v1";
 
-function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotName, onGrade, onForge, onSkill }: {
+function GearBoxPicker({ kind, series, owned, ctx, onRequestSeries, onGrade, onClose }: {
+  kind: "weapon" | "armor"; series: Series[]; owned: Record<string, string>; ctx: CardContext;
+  onRequestSeries: (key: string) => void; onGrade: (id: string, grade: string) => void; onClose: () => void;
+}) {
+  const [monster, setMonster] = useState("");
+  const [weaponType, setWeaponType] = useState("");
+  const [query, setQuery] = useState("");
+  const [display, setDisplay] = useState<"image" | "name">("image");
+  const [newGear, setNewGear] = useState<string | null>(null);
+  const item = series.find((entry) => entry.key === monster);
+  const candidates = item ? kind === "armor"
+    ? ARMOR_SLOTS.map((slot) => ({ slot, kind: "armor", name: SLOT_NAMES[slot], icon: ARMOR_ICON[slot], entries: seriesSkills(item, slot) }))
+    : item.weaponTypes.filter((type) => !weaponType || type === weaponType).map((type) => ({ slot: "weapon", kind: type, name: WEAPON_NAMES[type] ?? type, icon: WEAPON_ICON[type], entries: seriesSkills(item, "weapon", type) })) : [];
+
+  return <Modal title={kind === "weapon" ? "新增武器" : "新增魔物防具"} onClose={onClose}>
+    {kind === "weapon" ? <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1 mb-3">
+      {[["", "全部武器"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => <button key={type} type="button" aria-label={name} title={name} aria-pressed={weaponType === type}
+        onClick={() => { setWeaponType(type); if (type && item && !item.weaponTypes.includes(type)) setMonster(""); }}
+        className={cx("rounded border w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center fs-sm", weaponType === type ? "border-[#e0a900] bg-[#fffdf5]" : "border-[#e3e6e1] bg-white")}>
+        {type ? <span aria-hidden="true" className={cx("block w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}
+      </button>)}
+    </div> : null}
+    <MonsterPicker series={series.filter((entry) => kind === "armor" ? entry.hasArmor : weaponType ? entry.weaponTypes.includes(weaponType) : entry.weaponTypes.length > 0)}
+      value={monster} onPick={(key) => { setMonster(key); onRequestSeries(key); }} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} />
+    {item ? <>
+      <p className="fs-md text-[#687168]">{item.name}：{kind === "armor" ? "點選要登記的部位，可逐件新增。" : "點選要登記的武器。"}新增後可直接輸入等級，留空使用最低等級。</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{candidates.map((candidate) => {
+        const id = gearId(candidate.slot, `${item.key}::${candidate.kind}`);
+        const current = owned[id];
+        const registered = !!current && current !== "unforged";
+        const rows = ctx.gradeRowsFor(item.key, candidate.kind);
+        const title = `${item.name}${candidate.name}`;
+        return <div key={id} className="min-w-0 flex flex-col gap-2 p-3 rounded-lg border border-[#e3dac6] bg-[#fffaf0]">
+          <span className="flex items-center gap-2 fs-md font-bold"><span aria-hidden="true" className={cx("block shrink-0 w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(candidate.icon)})` }} />{candidate.name}</span>
+          <div className="flex-1 fs-sm text-[#687168]">{Object.entries(skillsAtGrade(candidate.entries, MAX_GRADE)).map(([name, level]) => <span key={name} className="block">{name} {level}</span>)}</div>
+          {registered ? <label className="flex flex-wrap items-center justify-between gap-1 fs-sm text-[#687168]">已登記
+            <CurrentGradeInput value={current} title={title} autoFocus={newGear === id} emptyFallback={newGear === id ? rows?.[0]?.grade : undefined}
+              onCommit={(grade) => { onGrade(id, grade); if (newGear === id) setNewGear(null); }} />
+          </label> : <button type="button" disabled={!rows?.length} aria-label={`新增${title}`}
+            onClick={() => { if (!rows?.length) return; setNewGear(id); onGrade(id, rows[0].grade); }}
+            className="rounded-md border border-dashed border-[#bca77e] bg-white px-2 py-1.5 fs-sm text-[#687168] hover:bg-[#f3ecdb]">
+            {rows === undefined ? "載入中……" : !rows.length ? "無法取得等級資料" : `＋ 新增（${rows[0].grade}）`}
+          </button>}
+        </div>;
+      })}</div>
+    </> : <p className={NOTE}>選擇魔物後，即可登記{kind === "weapon" ? "武器" : "防具"}。</p>}
+  </Modal>;
+}
+
+function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotName, onGrade, onForge, onSkill, onRequestSeries, ready }: {
   owned: Record<string, string>; forged: Record<string, string[]>; builds: Build[]; seriesBy: Record<string, Series>; ctx: CardContext;
   weaponTypeName: (type: string) => string; slotName: (slot: ArmorSlot) => string;
   onGrade: (id: string, grade: string) => void; onForge: (id: string, skill: string, on: boolean) => void; onSkill: (name: string, level: number) => void;
+  onRequestSeries: (key: string) => void; ready: boolean;
 }) {
   const [adding, setAdding] = useState<string | null>(null);
+  const [newArmor, setNewArmor] = useState<string | null>(null);
+  const [picker, setPicker] = useState<"weapon" | "armor" | null>(null);
   // 排列方式（存在瀏覽器）：武器＝依魔物／依種類；裝備＝依部位／依魔物。
   const [weaponView, setWeaponView] = useState<"monster" | "type">("monster");
   const [armorView, setArmorView] = useState<"slot" | "monster">("slot");
@@ -1098,7 +1155,10 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
           <div className="flex items-center gap-2">
             {ctx.icons[row.item!.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item!.key])})` }} /> : null}
             <strong className="flex-1 min-w-0 truncate fs-lg text-[#2b332c]" title={row.title}>{row.title}</strong>
-            <CurrentGradeInput value={current} title={row.title} onCommit={(grade) => onGrade(id, grade)} />
+            <CurrentGradeInput value={current} title={row.title} autoFocus={newArmor === id} emptyFallback={newArmor === id ? current : undefined} onCommit={(grade) => {
+              onGrade(id, grade);
+              if (newArmor === id) setNewArmor(null);
+            }} />
           </div>
           <GearDetail entries={row.entries} slotGrades={row.slotGrades} major={Number.isFinite(major) ? major : 0} skillLevels={ctx.skillLevels} onSkill={onSkill} />
           {armor ? <div className="pt-1.5 border-t border-dashed border-[#e8dfcb] flex flex-col gap-1.5">
@@ -1135,26 +1195,39 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
     {options.map(([option, text]) => <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}
       className={cx("px-2.5 py-0.5 rounded fs-md border-0 cursor-pointer", value === option ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{text}</button>)}</div>;
 
-  // 依魔物：放得下 5 張就一個魔物一行，固定頭／身／手／腰／腳五格（沒有的留虛線空格）；放不下就緊湊排列。
+  // 依魔物：固定五格，未製作的部位可直接新增；放不下五張時改用緊湊排列。
   const armorByMonster = () => {
     const sorted = [...armors].sort((a, b) => byMonster(a, b) || order.indexOf(a.slot) - order.indexOf(b.slot));
     if (columns < GEAR_MAX_COLUMNS || armorLayout === "compact") return grid(sorted.map(card));
     const monsters = [...new Set(sorted.map(monsterOf))];
     return <div className="flex flex-col gap-2">{monsters.map((key) => <div key={key} className="grid gap-2 items-stretch" style={{ gridTemplateColumns: `repeat(${GEAR_MAX_COLUMNS}, minmax(0, 1fr))` }}>
       {ARMOR_SLOTS.map((slot) => { const entry = sorted.find((candidate) => monsterOf(candidate) === key && candidate.slot === slot);
-        return entry ? card(entry) : <div key={slot} aria-label={`${seriesBy[key]?.name ?? key}沒有${slotName(slot)}`} className="min-h-[48px] rounded-xl border border-dashed border-[#d5d0c2]" />; })}
+        if (entry) return card(entry);
+        const rows = ctx.gradeRowsFor(key, "armor");
+        const title = `${seriesBy[key]?.name ?? key}${slotName(slot)}`;
+        return <button key={slot} type="button" disabled={!rows?.length} aria-label={`新增${title}`}
+          title={rows === undefined ? "裝備資料載入中……" : !rows.length ? "這件裝備沒有等級資料" : `新增${title}，預設等級 ${rows[0].grade}`}
+          onClick={() => {
+            if (!rows?.length) return;
+            const id = gearId(slot, `${key}::armor`);
+            setNewArmor(id);
+            onGrade(id, rows[0].grade);
+          }} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-dashed border-[#d5d0c2] bg-transparent fs-sm text-[#8b938c] hover:bg-[#fffaf0] hover:border-[#bca77e]">
+          <span aria-hidden="true" className="fs-xl">＋</span><span>{slotName(slot)}</span>
+        </button>; })}
     </div>)}</div>;
   };
 
   return <div ref={wrap} className="flex flex-col gap-5">
-    {weapons.length ? <section aria-label="武器">
-      {heading("武器", weapons.length, segmented("武器排列方式", [["monster", "依魔物"], ["type", "依種類"]] as ["monster" | "type", string][], weaponView, (next) => choose({ weapon: next })))}
-      {weaponView === "monster"
+    <section aria-label="武器">
+      {heading("武器", weapons.length, <>{segmented("武器排列方式", [["monster", "依魔物"], ["type", "依種類"]] as ["monster" | "type", string][], weaponView, (next) => choose({ weapon: next }))}
+        <button type="button" disabled={!ready} onClick={() => setPicker("weapon")} className="ml-auto px-3 py-1 rounded-md border border-dashed border-[#bca77e] bg-white fs-md text-[#687168] hover:bg-[#fffaf0]">＋新增武器</button></>)}
+      {!weapons.length ? <p className={NOTE}>尚未登記武器，可直接新增，或在配裝頁輸入目前等級後自動帶入。</p> : weaponView === "monster"
         ? grid([...weapons].sort((a, b) => byMonster(a, b) || typeOrder.indexOf(typeOf(a)) - typeOrder.indexOf(typeOf(b))).map(card))
         : <div className="flex flex-col gap-3">{typeOrder.map((type) => { const group = weapons.filter((entry) => typeOf(entry) === type).sort(byMonster);
           return group.length ? <div key={type}>{divider(weaponTypeName(type), group.length)}{grid(group.map(card))}</div> : null; })}</div>}
-    </section> : null}
-    {armors.length ? <section aria-label="裝備">
+    </section>
+    <section aria-label="裝備">
       {heading("裝備", armors.length, <>{segmented("裝備排列方式", [["slot", "依部位"], ["monster", "依魔物"]] as ["slot" | "monster", string][], armorView, (next) => choose({ armor: next }))}
         {armorView === "monster" ? <>
           <div role="group" aria-label="依魔物的排法" className="flex rounded-md bg-[#eef0ed] p-0.5">
@@ -1163,12 +1236,14 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
                 title={blocked ? "畫面放不下五張卡，無法一魔物一行" : undefined}
                 className={cx("px-2.5 py-0.5 rounded fs-md border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-45", (blocked ? "compact" : armorLayout) === option ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{text}</button>; })}
           </div>
-          {columns < GEAR_MAX_COLUMNS ? <small className="fs-sm text-[#8b938c]">畫面放不下五件，只能緊湊排列</small> : null}</> : null}</>)}
-      {armorView === "slot"
+          {columns < GEAR_MAX_COLUMNS ? <small className="fs-sm text-[#8b938c]">畫面放不下五件，只能緊湊排列</small> : null}</> : null}
+        <button type="button" disabled={!ready} onClick={() => setPicker("armor")} className="ml-auto px-3 py-1 rounded-md border border-dashed border-[#bca77e] bg-white fs-md text-[#687168] hover:bg-[#fffaf0]">＋新增魔物防具</button></>)}
+      {!armors.length ? <p className={NOTE}>尚未登記防具，可選擇魔物後逐件新增，或在配裝頁輸入目前等級後自動帶入。</p> : armorView === "slot"
         ? <div className="flex flex-col gap-3">{ARMOR_SLOTS.map((slot) => { const group = armors.filter((entry) => entry.slot === slot);
           return group.length ? <div key={slot}>{divider(slotName(slot), group.length)}{grid(group.map(card))}</div> : null; })}</div>
         : armorByMonster()}
-    </section> : null}
+    </section>
+    {picker ? <GearBoxPicker kind={picker} series={Object.values(seriesBy)} owned={owned} ctx={ctx} onRequestSeries={onRequestSeries} onGrade={onGrade} onClose={() => setPicker(null)} /> : null}
     {adding && ctx.driftstones ? (() => {
       const learned = forged[adding] ?? [];
       const title = entries.find((entry) => entry.id === adding)?.row.title ?? "";
@@ -1504,6 +1579,7 @@ export default function MhnowApp() {
   const [failedDetails, setFailedDetails] = useState<Record<string, boolean>>({});
   const [icons, setIcons] = useState<Record<string, string>>({});
   const [view, setView] = useState<"loadout" | "calculator" | "driftstone" | "community" | "gearbox">("loadout");
+  const [gearboxSeries, setGearboxSeries] = useState("");
   const [plans, setPlans] = useState<PlannedGear[]>([]);
   const [plansRestored, setPlansRestored] = useState(false);
   const [plansStorageError, setPlansStorageError] = useState(false);
@@ -1641,12 +1717,13 @@ export default function MhnowApp() {
     return row.item && piece?.target ? [{ row, series: row.item.key, piece }] : [];
   })) : [];
 
-  /** 升級素材只有計算器、展開的裝備列、要列缺少素材的裝備、統計區需要，用到哪個系列才抓哪個。 */
+  /** 升級表依需要載入；裝備庫也用它取得新增防具的最低等級。 */
   const neededSeries = [...new Set(view === "calculator"
     ? (calcSeries ? [calcSeries] : [])
     : [...builds.builds.flatMap((build) => rowsByBuild[build.id].flatMap((row) => (row.item
       && (openTiers[`${build.id}:${row.id}`] || (build.showMissing && pieceOf(build, row.id, row.itemKey).target)) ? [row.item.key] : []))),
-    ...statsPlan.map((entry) => entry.series), ...plans.map((plan) => plan.series)])].join(",");
+    ...statsPlan.map((entry) => entry.series), ...plans.map((plan) => plan.series),
+    ...(view === "gearbox" ? [gearboxSeries, ...[...Object.keys(builds.owned ?? {}), ...Object.keys(builds.forged ?? {})].map((id) => id.split("|")[1]?.split("::")[0])].filter((key): key is string => !!key) : [])])].join(",");
   useEffect(() => {
     for (const key of neededSeries ? neededSeries.split(",") : []) {
       if (details[key] || failedDetails[key]) continue;
@@ -1760,8 +1837,8 @@ export default function MhnowApp() {
   const navButton =(mode: typeof view, label: string) => <button onClick={() => setView(mode)}
     className={cx("border rounded-full py-2 px-6 max-[620px]:py-1.5 max-[620px]:px-2 max-[620px]:text-[12px] max-[620px]:whitespace-nowrap cursor-pointer", view === mode ? "bg-[#17231d] text-white border-[#17231d]" : "bg-white border-[#d9d9d9]")}>{label}</button>;
 
-  return <main className="min-h-screen bg-[#f4f3ee] text-[#222823]">
-    <header className="h-[40px] px-[max(16px,calc((100vw_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
+  return <main className="min-h-[calc(100dvh/var(--app-scale))] bg-[#f4f3ee] text-[#222823]">
+    <header className="h-[40px] px-[max(16px,calc((100%_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
       <div className="text-center"><strong className="fs-xl">配裝紀錄</strong></div>
     </header>
     <nav className="flex flex-wrap justify-center gap-2 max-[620px]:gap-1 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}{navButton("gearbox", "我的裝備庫")}{navButton("community", "社群配裝")}</nav>
@@ -1876,12 +1953,13 @@ export default function MhnowApp() {
     </section>
 
     : view === "gearbox" ? <section className="max-w-[1400px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
-      <PageHeading title="我的裝備庫" hint="配裝畫面如有輸入裝備等級，會自動帶入此區" />
+      <PageHeading title="我的裝備庫" hint="可直接登記武器與防具；配裝畫面輸入的裝備等級也會自動帶入" />
       <GearBox owned={builds.owned ?? {}} forged={builds.forged ?? {}} builds={builds.builds} seriesBy={seriesBy} ctx={cardContext} weaponTypeName={weaponTypeName} slotName={slotName}
+        ready={restored && loaded} onRequestSeries={setGearboxSeries}
         onForge={(id, skill, on) => setBuilds((state) => setForged(state, id, skill, on))} onGrade={(id, grade) => setBuilds((state) => setOwnedGrade(state, id, grade))} onSkill={(name, level) => setSkillTip({ name, level })} />
     </section>
 
-    : view === "community" ? <section className="max-w-[1100px] mx-auto my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
+    : view === "community" ? <section className="my-4 px-4 pb-8 max-[620px]:my-3 max-[620px]:px-2 max-[620px]:pb-7">
       <PageHeading eyebrow="COMMUNITY" title="社群配裝" description="mhnow.me 玩家分享的配裝，依按讚數排序。" />
       <CommunityBuilds series={allSeries} icons={icons} weaponIcons={WEAPON_ICON}
         renderCard={(build, header, footer) => <BuildCard readOnly build={build} rows={gearRowsOf(build, seriesBy, weaponTypeName, slotName)} ctx={cardContext} header={header} footer={footer}
@@ -1892,15 +1970,17 @@ export default function MhnowApp() {
     </section>
 
     : view === "calculator" ? <section className={PAGE}>
+      <div className="grid gap-2 min-[800px]:grid-cols-[1fr_minmax(320px,440px)] items-center">
       <PageHeading eyebrow="MATERIALS" title="素材計算器" description="選擇對象與階級區間，累計中間所有升級需要的素材與 Zenny。" />
 
-      <section className="block mt-2.5 p-3.5 max-[620px]:p-2.5 bg-white border border-[#dfe2dc] rounded-[10px]">
+      <section className="min-w-0">
         {!loaded ? <p className={NOTE}>資料載入中……</p>
           : <button className="w-full flex-none flex justify-between items-center ml-0 py-3.5 px-4 text-left border border-[#28352e] bg-[#28352e] text-white rounded-lg fs-md cursor-pointer" onClick={() => { setCalcQuery(""); setCalcPickerOpen(true); }}>
               <span>{calcKind ? `${seriesBy[calcSeries]?.name}${calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}` : "選擇魔物與防具／武器"}</span>
               <small className="font-normal opacity-75">{calcKind ? "點擊更換" : "點擊選擇"}</small>
             </button>}
       </section>
+      </div>
 
       {calcPickerOpen ? <Modal title="選擇對象" onClose={() => setCalcPickerOpen(false)}>
         <MonsterPicker series={allSeries} value={calcSeries} icons={icons} display={display} onDisplay={setDisplay} query={calcQuery} onQuery={setCalcQuery}
@@ -1917,10 +1997,7 @@ export default function MhnowApp() {
 
       {calcKind ? <section className="min-w-0">
         {!calcRows ? <p className={NOTE}>升級資料載入中……</p> : !calcRows.length ? <p className="m-8 p-5 border border-[#d78370] bg-[#fff3ef] text-[#842e20] rounded-[10px]">這個組合沒有升級資料。</p> : <>
-          <div className="flex justify-between items-end pt-4 pb-6 px-0 border-b border-[#d9ddd6] max-[720px]:pt-[26px]"><div className="text-right">
-            <span className="block fs-md tracking-[1.5px] text-[#8a928b]">{calcKind === "armor" ? "ARMOR" : "WEAPON"}</span>
-            <h2 className="text-[34px] my-[7px] mx-0 max-[720px]:text-[28px]">{seriesBy[calcSeries]?.name}{calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}</h2>
-          </div></div>
+          <h2 className="fs-xl text-[#2b332c] mt-5 mb-3">{seriesBy[calcSeries]?.name}・{calcKind === "armor" ? "防具" : weaponTypeName(calcKind)}</h2>
           <GradeRangeCost rows={calcRows} value={calcRange} onChange={setCalcRange} />
         </>}
       </section> : null}
