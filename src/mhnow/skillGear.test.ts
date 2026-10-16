@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
 import { gearForSkill, searchTerms } from "./MhnowApp";
 
+it("can search armor without weapons and include weapons only when explicitly requested", () => {
+  const series = [{ key: "test", name: "測試", unlock: 1, hasArmor: true, weaponTypes: ["bow"], traits: {},
+    skills: { helm: [{ skill: "集中", levels: [{ grade: 2, level: 1 }] }], weapon: [{ skill: "集中", levels: [{ grade: 2, level: 1 }] }] } }];
+  expect(gearForSkill(series, ["集中"], false, false, "armor").map((gear) => gear.slot)).toEqual(["helm"]);
+  expect(gearForSkill(series, ["集中"], false, false, "weapon").map((gear) => gear.slot)).toEqual(["weapon"]);
+  expect(gearForSkill(series, ["集中"]).map((gear) => gear.slot).sort()).toEqual(["helm", "weapon"]);
+});
+
 it("searches typed weapon traits per weapon type without turning traits into skills", () => {
   const series = [{
     key: "test", name: "測試", unlock: 1, hasArmor: true, weaponTypes: ["insect-glaive", "bow", "hammer"],

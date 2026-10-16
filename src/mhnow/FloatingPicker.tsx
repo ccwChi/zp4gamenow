@@ -40,10 +40,10 @@ function viewport() {
   return { width: window.innerWidth / scale, height: window.innerHeight / scale, scale };
 }
 
-function defaultBounds(): Bounds {
+function defaultBounds(preferredWidth = 760, preferredHeightRatio = 0.8): Bounds {
   const view = viewport();
-  const width = Math.min(760, view.width - 32);
-  const height = view.height * 0.8;
+  const width = Math.min(preferredWidth, view.width - 32);
+  const height = view.height * preferredHeightRatio;
   return fitBounds({ x: (view.width - width) / 2, y: (view.height - height) / 2, width, height }, view.width, view.height);
 }
 
@@ -55,17 +55,19 @@ function isBounds(value: unknown): value is Bounds {
 }
 
 /** 這次開著網頁期間，桌機版視窗最後的位置（不寫進瀏覽器存檔）。 */
-let sessionBounds: Bounds | null = null;
+const sessionBounds = new Map<string, Bounds>();
 
 /**
  * open：關閉時只是藏起來（裡面的選擇、結果都留著），要清掉由呼叫端卸載重開。
  * closeOnBackdrop：點背景是否關閉（預設會）。
  * clearOnClose／onClearOnClose：有給 onClearOnClose 就在標題列顯示「關閉即清除資料」勾選框（手機版也顯示）。
  * onClear：有給就在勾選框旁放「清除」按鈕，立刻清掉這個視窗的資料（視窗不關）。
+ * preferredWidth／storageKey：不同工具可使用自己的預設寬度與位置記憶。
  */
-export function FloatingPicker({ title, onClose, children, open = true, closeOnBackdrop = true, clearOnClose, onClearOnClose, onClear }: {
+export function FloatingPicker({ title, onClose, children, open = true, closeOnBackdrop = true, clearOnClose, onClearOnClose, onClear, preferredWidth = 760, preferredHeightRatio = 0.8, storageKey = STORAGE_KEY }: {
   title: string; onClose: () => void; children: ReactNode; open?: boolean; closeOnBackdrop?: boolean;
   clearOnClose?: boolean; onClearOnClose?: (next: boolean) => void; onClear?: () => void;
+  preferredWidth?: number; preferredHeightRatio?: number; storageKey?: string;
 }) {
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -81,40 +83,41 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
 
   useEffect(() => {
     const view = viewport();
-    let initial = defaultBounds();
+    let initial = defaultBounds(preferredWidth, preferredHeightRatio);
     try {
-      const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+      const saved: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "null");
       if (isBounds(saved)) {
         initial = fitBounds(saved, view.width, view.height);
         setRemember(true);
       }
     } catch { /* Invalid or unavailable storage uses the default window. */ }
     // 清除資料會重新掛載視窗；這次開著網頁期間拖過的位置沿用，視窗才不會跳回預設位置。
-    if (sessionBounds) initial = fitBounds(sessionBounds, view.width, view.height);
+    const previous = sessionBounds.get(storageKey);
+    if (previous) initial = fitBounds(previous, view.width, view.height);
     desktop.current = initial;
     const media = window.matchMedia(MOBILE_QUERY);
     const layout = () => {
       const view = viewport();
       setMobile(media.matches);
       if (media.matches) setBounds(mobileBounds(view.width, view.height));
-      else setBounds(fitBounds(desktop.current ?? defaultBounds(), view.width, view.height));
+      else setBounds(fitBounds(desktop.current ?? defaultBounds(preferredWidth, preferredHeightRatio), view.width, view.height));
     };
     layout();
     window.addEventListener("resize", layout);
     return () => window.removeEventListener("resize", layout);
-  }, []);
+  }, [preferredWidth, preferredHeightRatio, storageKey]);
 
   useEffect(() => {
     // 手機版的位置是固定的，不存也不清掉桌機記住的設定。
     if (!bounds || mobile) return;
     desktop.current = bounds;
-    sessionBounds = bounds;
+    sessionBounds.set(storageKey, bounds);
     try {
-      if (remember) localStorage.setItem(STORAGE_KEY, JSON.stringify(bounds));
-      else localStorage.removeItem(STORAGE_KEY);
+      if (remember) localStorage.setItem(storageKey, JSON.stringify(bounds));
+      else localStorage.removeItem(storageKey);
       setStorageError(false);
     } catch { setStorageError(true); }
-  }, [bounds, remember, mobile]);
+  }, [bounds, remember, mobile, storageKey]);
 
   function start(event: PointerEvent<HTMLElement>, mode: "move" | "resize") {
     if (!bounds || mobile || event.button !== 0) return;
@@ -169,7 +172,7 @@ export function FloatingPicker({ title, onClose, children, open = true, closeOnB
         <label title={storageError ? "瀏覽器無法儲存視窗設定" : "下次打開時沿用現在的大小與位置"}
           className={cx("flex items-center gap-1 shrink-0 fs-md cursor-pointer", storageError ? "text-[#b23a30]" : "text-[#5b635c]")}>
           <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />記住大小位置{storageError ? "（無法儲存）" : ""}</label>
-        <button onClick={() => setBounds(defaultBounds())} className="shrink-0 border border-[#cfc7b4] rounded px-2 py-1 bg-white fs-md cursor-pointer">重設視窗</button>
+        <button onClick={() => setBounds(defaultBounds(preferredWidth, preferredHeightRatio))} className="shrink-0 border border-[#cfc7b4] rounded px-2 py-1 bg-white fs-md cursor-pointer">重設視窗</button>
       </> : null}
       {onClearOnClose ? <label title="勾選後，關閉視窗時清掉這裡的選擇與結果；不勾則下次打開還在"
         className="flex items-center gap-1 shrink-0 fs-md text-[#5b635c] cursor-pointer">

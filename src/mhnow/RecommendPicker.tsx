@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { assetPath } from "./assetPath";
 import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
 import { popularSkills } from "./popularSkills";
-import { SkillGroups } from "./SkillGroups";
+import { SkillSelector } from "./SkillSelector";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS } from "./damage";
 import { isRecommendable, pieceSkills, pieceSlots, recommendBuilds, swapPiece, weaponSetup, weaponSkillsOf, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
 
@@ -52,29 +52,6 @@ const TOGGLE_ON = "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900
 const TOGGLE_OFF = "border-[#e3e6e1] bg-white text-[#5b635c]";
 const PRIMARY = "w-full py-2.5 rounded-lg border-0 bg-[#28352e] text-white fs-lg font-bold cursor-pointer disabled:opacity-50 disabled:cursor-default";
 const SMALL_BUTTON = "shrink-0 px-2.5 py-1 rounded-md border border-[#cfc7b4] bg-white fs-md cursor-pointer disabled:opacity-50 disabled:cursor-default";
-
-/** 長按（手機或滑鼠按住 0.5 秒）開技能說明；沒長按到就當一般點擊。手指滑動超過 10px 視為捲動，取消長按。 */
-function useLongPress(onLong: (name: string) => void) {
-  const timer = useRef<number | undefined>(undefined);
-  const fired = useRef(false);
-  const origin = useRef({ x: 0, y: 0 });
-  const cancel = () => window.clearTimeout(timer.current);
-  useEffect(() => cancel, []);
-  return (name: string, onTap: () => void) => ({
-    onPointerDown: (event: PointerEvent) => {
-      if (event.button !== 0) return;
-      fired.current = false;
-      origin.current = { x: event.clientX, y: event.clientY };
-      cancel();
-      timer.current = window.setTimeout(() => { fired.current = true; onLong(name); }, 500);
-    },
-    onPointerMove: (event: PointerEvent) => { if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 10) cancel(); },
-    onPointerUp: cancel, onPointerLeave: cancel, onPointerCancel: cancel,
-    onContextMenu: (event: { preventDefault: () => void }) => event.preventDefault(),
-    onClick: () => { if (fired.current) { fired.current = false; return; } onTap(); },
-  });
-}
-const NO_CALLOUT = "select-none [-webkit-touch-callout:none]";
 
 /** 圖示；沒有圖時顯示 fallback 文字的第一個字（例如魔物名稱）。 */
 /** 選擇畫面裡的圖示大小：魔物／武器種類一律 IC，部位小圖示一律 IC_SLOT（對應 globals.css 的 --ic、--ic-slot）。 */
@@ -172,7 +149,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   // 一律以最高階（G10）的技能、洞數與武器數值計算。
   const grade = 10;
   const [picks, setPicks] = useState<Pick[]>([]);
-  const [query, setQuery] = useState("");
   const [fixed, setFixed] = useState<Partial<Record<Slot, { key: string; grade: number }>>>({});
   const [fixing, setFixing] = useState<Slot | null>(null);
   const [fixOpen, setFixOpen] = useState(true);
@@ -185,12 +161,8 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const [excludedBy, setExcludedBy] = useState(saved0.excluded);
   const excluded = excludedBy[objective];
   const [noDrift, setNoDrift] = useState(saved0.noDrift);
-  const [noDriftOpen, setNoDriftOpen] = useState(false);
-  const [noDriftQuery, setNoDriftQuery] = useState("");
   const setExcluded = (next: string[] | ((current: string[]) => string[])) =>
     setExcludedBy((by) => ({ ...by, [objective]: typeof next === "function" ? next(by[objective]) : next }));
-  const [excludeOpen, setExcludeOpen] = useState(false);
-  const [excludeQuery, setExcludeQuery] = useState("");
   const [includeDrifts, setIncludeDrifts] = useState(true);
   const [conditions, setConditions] = useState<string[]>(saved0.conditions);
   useEffect(() => {
@@ -204,7 +176,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const [saved, setSaved] = useState<string[]>([]);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
-  const press = useLongPress((name) => onSkill(name, picks.find((pick) => pick.name === name)?.level ?? 0));
 
   const byKey = useMemo(() => Object.fromEntries(series.map((item) => [item.key, item])), [series]);
   const maxLevels = useMemo(() => {
@@ -229,10 +200,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const required = Object.fromEntries(picks.filter((pick) => pick.mode !== "bonus").map((pick) => [pick.name, pick.level]));
   const driftOnly = picks.filter((pick) => pick.mode === "drift").map((pick) => pick.name);
   const bonus = picks.filter((pick) => pick.mode === "bonus").map((pick) => pick.name);
-  const terms = query.trim().toLowerCase().split(/[\s,，]+/).filter(Boolean);
-  const filtered = terms.length ? skillNames.filter((name) => terms.some((term) => name.toLowerCase().includes(term))) : skillNames;
-  const excludeTerms = excludeQuery.trim().toLowerCase().split(/[\s,，]+/).filter(Boolean);
-  const excludeFiltered = excludeTerms.length ? skillNames.filter((name) => excludeTerms.some((term) => name.toLowerCase().includes(term))) : skillNames;
   const canSearch = !!weaponType && (objective === "damage" || Object.keys(required).length > 0);
   const stats = weapon && byKey[weaponKey] ? weaponSetup(byKey[weaponKey], weaponType, grade) : undefined;
   const weaponOwn = weapon ? Object.entries(weaponSkillsOf(byKey[weaponKey], weaponType, grade)) : [];
@@ -246,8 +213,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
     setPicks((current) => current.some((pick) => pick.name === name) ? current.filter((pick) => pick.name !== name) : [...current, { name, level: maxLevels[name] ?? 1, mode: "need" }]);
     // 需要跟不配裝互斥：選了就從不配裝清單拿掉。
     if (adding) setExcludedBy((by) => ({ stones: by.stones.filter((skill) => skill !== name), damage: by.damage.filter((skill) => skill !== name) }));
-    // 從搜尋結果加入後清掉搜尋字，回到完整清單。
-    if (adding) setQuery("");
   }
   /** 依技能挑裝備的目標：有另外指定技能就用指定的，沒有就用「② 技能」選的。值是想要的等級（算貢獻時封頂用）。 */
   const goalLevels: Record<string, number> = candSkills.length
@@ -362,13 +327,15 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
         </section>
 
         <section className={SECTION}>
-          <div className={SECTION_HEAD}><span className="min-w-0">② 技能{picks.length ? `（${picks.length}）` : ""}<small className={HINT}>點一下加入／取消，長按看說明</small></span>
+          <div className={SECTION_HEAD}><span className="min-w-0">② 技能{picks.length ? `（${picks.length}）` : ""}<small className={HINT}>搜尋或複選技能，點已選名稱看說明</small></span>
             {picks.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setPicks([])}>清除</button> : null}</div>
           <div className="p-2 space-y-2">
+            <SkillSelector names={skillNames} selected={picks.map((pick) => pick.name)} onToggle={toggleSkill} onClear={() => setPicks([])}
+              popular={popularSkills(weaponType, stats?.element)} visible={visible} />
             {picks.map((pick) => {
               const max = maxLevels[pick.name] ?? 1;
               return <div key={pick.name} className="flex flex-wrap items-center gap-x-2 gap-y-1 p-1.5 rounded-md bg-[#fbfaf6] border border-[#eee6d4]">
-                <b className="flex-1 min-w-0 truncate fs-lg">{pick.name}</b>
+                <button type="button" onClick={() => onSkill(pick.name, pick.level)} title="查看技能說明" className="flex-1 min-w-0 truncate p-0 border-0 bg-transparent text-left fs-md font-bold">{pick.name}</button>
                 <div role="group" aria-label={`${pick.name}的類型`} className="flex rounded-md bg-[#eef0ed] p-0.5">
                   {(["need", "bonus", "drift"] as const).map((mode) => <button key={mode} aria-pressed={pick.mode === mode}
                     disabled={mode === "drift" && !driftSkills.has(pick.name)} title={mode === "drift" ? (driftSkills.has(pick.name) ? "要求等級全部由漂流鍊成提供" : "漂流石資料未收錄此技能") : undefined}
@@ -381,12 +348,6 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                     <b className="w-9 shrink-0 text-right text-[#e08a00]">Lv{pick.level}</b></div>}
               </div>;
             })}
-            <input aria-label="搜尋技能" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋技能，例如：攻擊 會心"
-              className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-[#f8f8f5] fs-md outline-none" />
-            <div className="max-h-[260px] overflow-auto">
-              <SkillGroups columns="wrap" popular={popularSkills(weaponType, stats?.element)} names={filtered} searching={terms.length > 0} empty={<p className={NOTE}>找不到符合的技能。</p>} renderSkill={(name) => { const on = picks.some((pick) => pick.name === name); return <button key={name} aria-pressed={on} title="長按看說明" {...press(name, () => toggleSkill(name))}
-                className={cx("flex-auto text-center", NO_CALLOUT, "px-3 py-1.5 rounded border fs-lg cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; }} />
-            </div>
           </div>
         </section>
 
@@ -420,7 +381,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                   </>}
                 </div>
                 {lock && item ? <p className="m-0 px-2 pb-1.5 fs-md text-[#5b635c]">{skillSpans(lock.key, slot, lock.grade)}　{pieceSlots(item, slot, lock.grade) ? `洞 ${pieceSlots(item, slot, lock.grade)}` : "沒有洞（不能鍊成）"}</p> : null}
-                {fixing === slot ? <div className="desktop-monster-picker-content px-1.5 pb-1.5 space-y-1">
+                {fixing === slot ? <div className="px-1.5 pb-1.5 space-y-1">
                   <input aria-label="搜尋裝備" value={fixQuery} onChange={(event) => setFixQuery(event.target.value)} placeholder="搜尋魔物或技能名稱"
                     className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-white fs-md outline-none" />
                   <div className="flex flex-wrap items-center gap-1">
@@ -462,42 +423,22 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
         </section>
 
         <section className={SECTION}>
-          <div className={SECTION_HEAD}><span className="min-w-0">④ 不配裝技能{excluded.length ? `（${excluded.length}）` : ""}<small className={HINT}>結果不會出現帶有這些技能的防具，也不會用漂流石鍊它們</small></span>
-            <span className="flex items-center gap-2 font-normal">
-              {excluded.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setExcluded([])}>清除</button> : null}
-              <button className={SMALL_BUTTON} aria-expanded={excludeOpen} onClick={() => setExcludeOpen(!excludeOpen)}>{excludeOpen ? "收合" : "＋ 新增"}</button></span></div>
+          <div className={SECTION_HEAD}><span className="min-w-0">④ 不配裝技能{excluded.length ? `（${excluded.length}）` : ""}<small className={HINT}>結果不會出現帶有這些技能的防具，也不會用漂流石鍊它們</small></span></div>
           <div className="p-2 space-y-2">
+            <SkillSelector names={skillNames} selected={excluded} onToggle={toggleExcluded} onClear={() => setExcluded([])} visible={visible} title="選擇不配裝技能" label="搜尋不配裝技能" />
             {excluded.length ? <div className="flex flex-wrap gap-1">{excluded.map((name) => <button key={name} aria-label={`移除不配裝${name}`} onClick={() => toggleExcluded(name)}
-              className="px-2.5 py-1 rounded-full border border-[#e3a3a3] bg-[#fdf1f1] fs-lg text-[#a23030] cursor-pointer">{name} ✕</button>)}</div>
-              : null}
-            {excludeOpen ? <>
-              <input aria-label="搜尋不配裝技能" value={excludeQuery} onChange={(event) => setExcludeQuery(event.target.value)} placeholder="搜尋技能"
-                className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-[#f8f8f5] fs-md outline-none" />
-              <div className="max-h-[260px] overflow-auto">
-                <SkillGroups columns="wrap" names={excludeFiltered} searching={excludeTerms.length > 0} empty={<p className={NOTE}>找不到符合的技能。</p>} renderSkill={(name) => { const on = excluded.includes(name);
-                  return <button key={name} aria-pressed={on} title="長按看說明" {...press(name, () => toggleExcluded(name))}
-                    className={cx("flex-auto text-center", NO_CALLOUT, "px-3 py-1.5 rounded border fs-lg cursor-pointer", on ? "border-[#d23c3c] bg-[#fdf1f1] text-[#a23030]" : TOGGLE_OFF)}>{name}</button>; }} />
-              </div>
-            </> : null}
+              className="px-2 py-0.5 rounded-full border border-[#e3a3a3] bg-[#fdf1f1] fs-md text-[#a23030] cursor-pointer">{name} ✕</button>)}</div> : null}
           </div>
         </section>
 
         {objective === "damage" ? <section className={SECTION}>
-          <div className={SECTION_HEAD}><span className="min-w-0">不用漂流石鍊{noDrift.length ? `（${noDrift.length}）` : ""}<small className={HINT}>自動補洞時不鍊這些；防具本身帶有沒關係，你指定要的技能也不受影響</small></span>
-            <button className={SMALL_BUTTON} aria-expanded={noDriftOpen} onClick={() => setNoDriftOpen(!noDriftOpen)}>{noDriftOpen ? "收合" : "＋ 新增"}</button></div>
+          <div className={SECTION_HEAD}><span className="min-w-0">不用漂流石鍊{noDrift.length ? `（${noDrift.length}）` : ""}<small className={HINT}>自動補洞時不鍊這些；防具本身帶有沒關係，你指定要的技能也不受影響</small></span></div>
           <div className="p-2 space-y-2">
+            <SkillSelector names={[...driftSkills].sort((a, b) => a.localeCompare(b, "zh-Hant"))} selected={noDrift}
+              onToggle={(name) => setNoDrift((current) => current.includes(name) ? current.filter((skill) => skill !== name) : [...current, name])}
+              onClear={() => setNoDrift([])} visible={visible} title="選擇不鍊技能" label="搜尋不鍊的技能" />
             {noDrift.length ? <div className="flex flex-wrap gap-1">{noDrift.map((name) => <button key={name} aria-label={`移除${name}`} onClick={() => setNoDrift(noDrift.filter((skill) => skill !== name))}
-              className="px-2.5 py-1 rounded-full border border-[#cfc7b4] bg-[#f4f1e8] fs-lg text-[#5b635c] cursor-pointer">{name} ✕</button>)}</div> : null}
-            {noDriftOpen ? <>
-              <input aria-label="搜尋不鍊的技能" value={noDriftQuery} onChange={(event) => setNoDriftQuery(event.target.value)} placeholder="搜尋技能"
-                className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-[#f8f8f5] fs-md outline-none" />
-              <div className="max-h-[220px] overflow-auto">
-                <SkillGroups columns="wrap" names={[...driftSkills].filter((name) => !noDriftQuery.trim() || name.toLowerCase().includes(noDriftQuery.trim().toLowerCase())).sort((a, b) => a.localeCompare(b, "zh-Hant"))}
-                  searching={!!noDriftQuery.trim()} empty={<p className={NOTE}>找不到符合的技能。</p>} renderSkill={(name) => { const on = noDrift.includes(name);
-                    return <button key={name} aria-pressed={on} title="長按看說明" {...press(name, () => setNoDrift(on ? noDrift.filter((skill) => skill !== name) : [...noDrift, name]))}
-                      className={cx("flex-auto text-center", NO_CALLOUT, "px-3 py-1.5 rounded border fs-lg cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; }} />
-              </div>
-            </> : null}
+              className="px-2 py-0.5 rounded-full border border-[#cfc7b4] bg-[#f4f1e8] fs-md text-[#5b635c] cursor-pointer">{name} ✕</button>)}</div> : null}
           </div>
         </section> : null}
 

@@ -51,3 +51,53 @@
   .monster-selection-dialog .monster-picker-options,
   .desktop-monster-picker-content .monster-picker-options{height:auto;max-height:none;overflow:visible}
 }
+
+/* 依技能比較裝備：隨浮動視窗的實際寬度排列，小視窗先呈現總技能，再看候選。 */
+.skill-gear-comparison{--fs-sm:10px;--fs-md:12px;--fs-lg:14px;--fs-xl:16px}
+@media (min-width:621px){.skill-gear-comparison{--fs-sm:13px;--fs-md:15px;--fs-lg:17px;--fs-xl:19px}}
+.gear-comparison-layout{--comparison-scrollbar-height:4px;--comparison-skill-line:calc(var(--fs-md) * 1.35);--comparison-card-height:calc(max(24px,var(--comparison-skill-line)) + var(--comparison-skill-line) * 3 + 16px);flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow:auto}
+.comparison-equipped-panel{flex-shrink:0}
+.comparison-equipped-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.comparison-summary-panel{order:1;flex-shrink:0;max-height:230px;overflow:auto}
+.comparison-candidates-panel{order:2;flex-shrink:0}
+.comparison-candidate-list{max-height:440px}
+.comparison-candidate-group-grid{display:grid;grid-auto-flow:column;grid-auto-columns:max(150px,calc((100% - 12px) / 4));gap:4px;align-items:start;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain}
+.comparison-candidate-group-grid::-webkit-scrollbar{height:4px}
+.comparison-candidate-group-grid::-webkit-scrollbar-thumb{background:#b5bdb4;border-radius:4px}
+@supports not selector(::-webkit-scrollbar){.gear-comparison-layout{--comparison-scrollbar-height:8px}.comparison-candidate-group-grid{scrollbar-width:thin;scrollbar-color:#b5bdb4 transparent}}
+.comparison-gear-card{--comparison-skill-line:calc(var(--fs-md) * 1.35);--comparison-card-height:calc(max(24px,var(--comparison-skill-line)) + var(--comparison-skill-line) * 3 + 16px);position:relative;align-self:start;padding:5px 7px;text-align:left;min-height:var(--comparison-card-height);height:var(--comparison-card-height);max-height:none;overflow:visible}
+.comparison-gear-card>span:first-child{width:100%;height:max(24px,var(--comparison-skill-line));gap:4px}
+.comparison-gear-card strong{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.comparison-native-skills{min-height:calc(var(--comparison-skill-line) * 3)}
+.comparison-gear-card[data-slot="weapon"]{min-height:0;height:auto}
+.comparison-gear-card[data-slot="weapon"] .comparison-native-skills{min-height:0}
+.comparison-native-skill{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.comparison-selected-skills{max-width:45%}
+.comparison-gear-card .fs-sm{font-size:var(--fs-md);line-height:1.35}
+.comparison-gear-card>span:last-of-type{line-height:1.35}
+.comparison-holes{display:inline-block;flex-shrink:0;margin-left:auto;padding:2px 4px;border-radius:4px;background:#eee9f2;font-size:max(12px,var(--fs-sm));font-weight:600;color:#706080;white-space:nowrap;line-height:1.2}
+.comparison-summary-panel button.fs-sm{font-size:var(--fs-md)}
+/* 建議配裝的選武器區保持緊湊：武器與魔物各自使用適合辨識的尺寸。 */
+.recommend-weapon-picker{--ic:40px;--ic-btn:50px}
+.recommend-weapon-picker .weapon-type-options{--ic:34px;--ic-btn:44px}
+.recommend-weapon-picker .monster-picker-options{height:auto;max-height:none;overflow:visible}
+@media (min-width:621px){
+  .skill-selection-dialog{max-width:760px;max-height:min(600px,calc((100dvh - 96px) / var(--app-scale)))}
+}
+@container (min-width:900px){
+  .gear-comparison-layout{display:grid;grid-template-columns:205px minmax(0,1fr) 250px;grid-template-rows:max-content repeat(5,calc(var(--comparison-card-height) + var(--comparison-scrollbar-height))) minmax(0,1fr);gap:0 8px;overflow:auto;align-content:start}
+  .comparison-equipped-panel,.comparison-candidates-panel{display:grid;grid-template-rows:subgrid;grid-row:1/-1;min-height:0;overflow:visible;max-height:none}
+  .comparison-equipped-panel{grid-column:1;padding:0 8px}
+  .comparison-equipped-list>button:first-child{grid-row:1;margin:4px 0}
+  .comparison-equipped-list>button:nth-child(2){grid-row:2}
+  .comparison-equipped-list>button:nth-child(3){grid-row:3}
+  .comparison-equipped-list>button:nth-child(4){grid-row:4}
+  .comparison-equipped-list>button:nth-child(5){grid-row:5}
+  .comparison-equipped-list>button:nth-child(6){grid-row:6}
+  .comparison-equipped-list,.comparison-candidate-list{display:contents}
+  .comparison-candidates-panel{grid-column:2;order:1}
+  .comparison-controls{align-self:center;flex-wrap:nowrap;font-size:12px}
+  .comparison-controls .fs-sm{font-size:11px}
+  .comparison-candidate-group{padding:0 6px;border:0;min-height:0;overflow:visible}
+  .comparison-summary-panel{grid-column:3;grid-row:1/-1;order:2;max-height:none;overflow:visible}
+}
