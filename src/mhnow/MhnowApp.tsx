@@ -218,8 +218,8 @@ function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query
         className="flex-1 min-w-0 mx-3 my-0 py-2 px-[11px] border border-[#dfe2dc] rounded-[7px] bg-[#f8f8f5] fs-md outline-none max-[620px]:order-3 max-[620px]:basis-full max-[620px]:m-0" />
       <div className="flex bg-[#eef0ed] rounded-md p-0.5">{modeButton("image", "圖片")}{modeButton("name", "名稱")}</div>
     </div>
-    {visible.length ? <div className={small ? cx("flex flex-wrap gap-1 overflow-auto content-start", compact ? "max-h-[220px]" : "max-h-[290px] max-[760px]:max-h-[250px]") : cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
-      "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]")}>
+    {visible.length ? <div className={cx("monster-picker-options", small ? cx("flex flex-wrap gap-1 overflow-auto content-start", compact ? "max-h-[220px]" : "max-h-[290px] max-[760px]:max-h-[250px]") : cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
+      "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]"))}>
       {visible.map(({ item, skill }) => { const active = Array.isArray(value) ? value.includes(item.key) : value === item.key; return <button key={item.key}
         title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} aria-pressed={Array.isArray(value) ? active : undefined} onClick={() => onPick(item.key)}
         className={cx("min-w-0 p-[5px] border rounded-[7px] flex flex-col items-center justify-center text-[#2e3731] cursor-pointer",
@@ -257,7 +257,7 @@ async function copyText(text: string) {
 }
 
 /** narrow：技能說明、漂流石這類內容少的視窗用窄版。 */
-function Modal({ title, onClose, children, narrow, sheet }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean; sheet?: boolean }) {
+function Modal({ title, onClose, children, narrow, sheet, monsterSelection }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean; sheet?: boolean; monsterSelection?: boolean }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -265,7 +265,7 @@ function Modal({ title, onClose, children, narrow, sheet }: { title: string; onC
   }, [onClose]);
   // sheet：手機版從畫面底部滑出（drawer），桌機版維持置中視窗。
   return <div className={cx("fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 z-50", sheet ? "max-[620px]:items-end max-[620px]:p-0" : "max-[620px]:p-2")} onClick={onClose}>
-    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]")} onClick={(event) => event.stopPropagation()}>
+    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]", monsterSelection && "monster-selection-dialog")} onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3 border-b border-[#e5e7e2] flex-none">
         <strong className="fs-lg">{title}</strong>
         <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 fs-lg leading-none cursor-pointer text-[#4b5d50]">✕</button>
@@ -761,6 +761,19 @@ function gearRowsOf(build: Build, seriesBy: Record<string, Series>, weaponTypeNa
   ];
 }
 
+/** 一次設定已選防具的技能升滿目標；未設定目前階級的防具從生產開始計算。 */
+export function setArmorSkillTargets(build: Build, seriesBy: Record<string, Series>): Build {
+  let next = build;
+  for (const slot of ARMOR_SLOTS) {
+    const item = seriesBy[build.gear[slot]];
+    if (!item) continue;
+    const itemKey = itemKeyOf(build, slot);
+    const current = pieceOf(build, slot, itemKey).current || "unforged";
+    next = setPiece(next, slot, { item: itemKey, current, target: automaticTarget(slot, seriesSkills(item, slot), current, item.unlock) });
+  }
+  return next === build ? build : { ...next, showMissing: true };
+}
+
 /** 全套（武器＋五件防具＋漂流石）升到頂之後的技能總和。 */
 function maxSkillsOf(build: Build, rows: GearRow[]) {
   const result: Record<string, number> = {};
@@ -899,7 +912,13 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         className={cx(toolButton, "border-[#e3b8b4] bg-white text-[#b23a30]")}>刪除</button>
     </div>}
 
-    {readOnly ? null : <button onClick={onSkillGear} className="py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] fs-md cursor-pointer">依技能選全身裝備</button>}
+    {readOnly ? null : <div className="flex flex-wrap gap-1.5">
+      <button onClick={onSkillGear} className="flex-1 py-2 px-3 rounded-lg border border-[#099aa5] bg-white text-[#087b84] fs-md cursor-pointer">依技能選全身裝備</button>
+      <button disabled={!rows.some((row) => row.id !== "weapon" && row.item)}
+        title="一次將已選防具的目標設為技能全滿的最低階級，並顯示缺少素材；未填等級視為尚未生產，已達標的防具不升級"
+        onClick={() => onChange((next) => setArmorSkillTargets(next, Object.fromEntries(rows.flatMap((row) => row.item ? [[row.item.key, row.item]] : []))))}
+        className="flex-1 py-2 px-3 rounded-lg border border-[#bca77e] bg-[#fffaf0] text-[#80602d] fs-md cursor-pointer">防具技能升滿</button>
+    </div>}
     {rows.map((row) => {
       const isOpen = open(row.id);
       const piece = pieceOf(build, row.id, row.itemKey);
@@ -1053,7 +1072,7 @@ function GearBoxPicker({ kind, series, owned, ctx, onRequestSeries, onGrade, onC
     ? ARMOR_SLOTS.map((slot) => ({ slot, kind: "armor", name: SLOT_NAMES[slot], icon: ARMOR_ICON[slot], entries: seriesSkills(item, slot) }))
     : item.weaponTypes.filter((type) => !weaponType || type === weaponType).map((type) => ({ slot: "weapon", kind: type, name: WEAPON_NAMES[type] ?? type, icon: WEAPON_ICON[type], entries: seriesSkills(item, "weapon", type) })) : [];
 
-  return <Modal title={kind === "weapon" ? "新增武器" : "新增魔物防具"} onClose={onClose}>
+  return <Modal monsterSelection title={kind === "weapon" ? "新增武器" : "新增魔物防具"} onClose={onClose}>
     {kind === "weapon" ? <div role="group" aria-label="武器種類" className="flex flex-wrap gap-1 mb-3">
       {[["", "全部武器"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => <button key={type} type="button" aria-label={name} title={name} aria-pressed={weaponType === type}
         onClick={() => { setWeaponType(type); if (type && item && !item.weaponTypes.includes(type)) setMonster(""); }}
@@ -1589,7 +1608,7 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
       })()}
     </Modal> : null}
     {storageError ? <p role="alert" className="fs-md text-red-700">無法儲存待製作裝備，重新整理後可能遺失。</p> : null}
-    {picker ? <Modal title="加入待製作裝備" onClose={() => setPicker(false)}>
+    {picker ? <Modal monsterSelection title="加入待製作裝備" onClose={() => setPicker(false)}>
       {pickerKind === "weapon" ? <div role="group" aria-label="武器類型" className="flex flex-wrap gap-1 mb-2">
         {[["", "全部武器"], ...Object.entries(WEAPON_NAMES)].map(([type, name]) => <button key={type} aria-pressed={weaponFilter === type} aria-label={name} title={name} onClick={() => setWeaponFilter(type)}
           className={cx("rounded border w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center fs-sm font-bold cursor-pointer", weaponFilter === type ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
@@ -1962,7 +1981,7 @@ export default function MhnowApp() {
 
       {recommendMounted && index && driftstones ? <RecommendPicker key={recommendReset} series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
         icons={icons} gearIcons={{ weapon: WEAPON_ICON, armor: ARMOR_ICON }}
-        weaponPicker={(value, onPick) => <WeaponChooser series={weaponSeries} icons={icons} value={value} onPick={onPick} />}
+        weaponPicker={(value, onPick) => <div className="desktop-monster-picker-content"><WeaponChooser series={weaponSeries} icons={icons} value={value} onPick={onPick} /></div>}
         onSkill={(name, level) => setSkillTip({ name, level })}
         visible={recommendOpen} clearOnClose={clearOnClose.recommend} onClearOnClose={(recommend) => setClearOnClose((state) => ({ ...state, recommend }))}
         onClear={() => setRecommendReset((count) => count + 1)} onClose={closeRecommend} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
@@ -1975,14 +1994,14 @@ export default function MhnowApp() {
           else gear[slot] = key;
           return { ...next, gear };
         })} />) : null}
-      {discountPickerOpen ? <Modal title={`素材減免（已選 ${discounted.length}）`} onClose={() => setDiscountPickerOpen(false)}>
+      {discountPickerOpen ? <Modal monsterSelection title={`素材減免（已選 ${discounted.length}）`} onClose={() => setDiscountPickerOpen(false)}>
         <MonsterPicker series={weaponSeries} value={discounted} onPick={toggleDiscount} icons={icons} display={display} onDisplay={setDisplay} query={discountQuery} onQuery={setDiscountQuery} />
         <div className="flex gap-2 mt-3">
           <button disabled={!discounted.length} onClick={() => setDiscounted([])} className="py-2 px-3 rounded-lg border border-[#cfc7b4] bg-white fs-md cursor-pointer disabled:opacity-50 disabled:cursor-default">全部清除</button>
           <button onClick={() => setDiscountPickerOpen(false)} className="flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white fs-md cursor-pointer">完成</button>
         </div>
       </Modal> : null}
-      {editing && editingBuild ? <Modal title={editing.slot === "weapon" ? "選擇武器" : `選擇${slotName(editing.slot)}裝備`} onClose={() => setEditing(null)}>
+      {editing && editingBuild ? <Modal monsterSelection title={editing.slot === "weapon" ? "選擇武器" : `選擇${slotName(editing.slot)}裝備`} onClose={() => setEditing(null)}>
         <MonsterPicker slot={editing.slot} series={editing.slot === "weapon" ? weaponSeries : armorSeries} value={pickSeries} icons={icons} display={display} onDisplay={setDisplay} query={pickQuery} onQuery={setPickQuery}
           onPick={(key) => { setPickSeries(key); if (editing.slot !== "weapon") pickGear(editing.slot, key); }} />
         {editing.slot === "weapon" ? <ChoiceGrid label="② 選擇武器" iconOnly value={editingBuild.gear.weapon ?? ""}
@@ -2009,7 +2028,7 @@ export default function MhnowApp() {
       <CommunityBuilds series={allSeries} icons={icons} weaponIcons={WEAPON_ICON}
         renderCard={(build, header, footer) => <BuildCard readOnly build={build} rows={gearRowsOf(build, seriesBy, weaponTypeName, slotName)} ctx={cardContext} header={header} footer={footer}
           editingSlot={null} open={() => false} canDelete={false} onEdit={() => {}} onToggle={() => {}} onDrift={() => {}} onChange={() => {}} onDelete={() => {}} onSkillGear={() => {}} onShare={() => {}}
-          onSkill={(name, level) => setSkillTip({ name, level })} />} modal={(title, onClose, content) => <Modal title={title} onClose={onClose}>{content}</Modal>} weaponTypeName={weaponTypeName} full={builds.builds.length >= MAX_BUILDS}
+          onSkill={(name, level) => setSkillTip({ name, level })} />} modal={(title, onClose, content) => <Modal monsterSelection title={title} onClose={onClose}>{content}</Modal>} weaponTypeName={weaponTypeName} full={builds.builds.length >= MAX_BUILDS}
         skillsOf={(build) => maxSkillsOf(build, gearRowsOf(build, seriesBy, weaponTypeName, slotName))}
         onAdd={(build) => { const result = appendBuilds(builds, [build]); if (!result.added) return; setBuilds(result.state); setImportMessage(`已加入「${build.name}」，到「配裝」頁就看得到。`); }} />
     </section>
@@ -2027,7 +2046,7 @@ export default function MhnowApp() {
       </section>
       </div>
 
-      {calcPickerOpen ? <Modal title="選擇對象" onClose={() => setCalcPickerOpen(false)}>
+      {calcPickerOpen ? <Modal monsterSelection title="選擇對象" onClose={() => setCalcPickerOpen(false)}>
         <MonsterPicker series={allSeries} value={calcSeries} icons={icons} display={display} onDisplay={setDisplay} query={calcQuery} onQuery={setCalcQuery}
           onPick={(key) => { setCalcSeries(key); setCalcKind(""); setCalcQuery(""); setCalcRange({ current: "unforged", target: "" }); }} />
         {searchHits.length ? <ChoiceGrid label="搜尋結果" value={`${calcSeries}::${calcKind}`} items={searchHits}

@@ -39,3 +39,15 @@
    魔物與武器種類 40px、按鈕外框 50px、部位小圖示 30px。
    配裝主畫面的圖示是另外的大小，不受影響。 */
 :root{--ic:40px;--ic-btn:50px;--ic-slot:30px}
+
+/* 桌面魔物選擇視窗額外放大 125%，善用螢幕寬高；只有內容超過可用高度才捲動。 */
+@media (min-width:621px){
+  .monster-selection-dialog,.desktop-monster-picker-content{zoom:1.25}
+  .monster-selection-dialog{
+    width:calc((100vw - 48px) / (var(--app-scale) * 1.25));
+    max-width:1160px;
+    max-height:calc((100dvh - 48px) / (var(--app-scale) * 1.25));
+  }
+  .monster-selection-dialog .monster-picker-options,
+  .desktop-monster-picker-content .monster-picker-options{height:auto;max-height:none;overflow:visible}
+}

@@ -420,7 +420,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                   </>}
                 </div>
                 {lock && item ? <p className="m-0 px-2 pb-1.5 fs-md text-[#5b635c]">{skillSpans(lock.key, slot, lock.grade)}　{pieceSlots(item, slot, lock.grade) ? `洞 ${pieceSlots(item, slot, lock.grade)}` : "沒有洞（不能鍊成）"}</p> : null}
-                {fixing === slot ? <div className="px-1.5 pb-1.5 space-y-1">
+                {fixing === slot ? <div className="desktop-monster-picker-content px-1.5 pb-1.5 space-y-1">
                   <input aria-label="搜尋裝備" value={fixQuery} onChange={(event) => setFixQuery(event.target.value)} placeholder="搜尋魔物或技能名稱"
                     className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-white fs-md outline-none" />
                   <div className="flex flex-wrap items-center gap-1">
