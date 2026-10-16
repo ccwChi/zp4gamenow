@@ -1,4 +1,5 @@
 import { parsePlannedGear, type PlannedGear } from "./plannedGear";
+import { canonicalSkillName } from "./skills";
 
 /**
  * 多組配裝與 localStorage 存檔。
@@ -202,8 +203,8 @@ export function setPiece(build: Build, slot: string, piece: Piece): Build {
 
 /** 舊存檔每個洞只是技能名稱字串；新的是 { skill, color }。 */
 function parseDriftPick(pick: unknown): DriftPick | null {
-  if (typeof pick === "string") return pick ? { skill: pick, color: "" } : null;
-  if (isRecord(pick) && typeof pick.skill === "string" && pick.skill) return { skill: pick.skill, color: typeof pick.color === "string" ? pick.color : "" };
+  if (typeof pick === "string") return pick ? { skill: canonicalSkillName(pick), color: "" } : null;
+  if (isRecord(pick) && typeof pick.skill === "string" && pick.skill) return { skill: canonicalSkillName(pick.skill), color: typeof pick.color === "string" ? pick.color : "" };
   return null;
 }
 
@@ -244,7 +245,7 @@ function readBuildState(data: unknown): BuildState | null {
   // 「已練成」：舊存檔沒有這回事，原本鑲著的漂流石一律當成「尚未」，要自己標記。
   // 只認 forgedVersion 對得上的存檔（開發中途曾經存過別的算法，那份不採用）。
   const forged: Forged = {};
-  if (data.forgedVersion === FORGED_VERSION && isRecord(data.forged)) for (const [id, skills] of Object.entries(data.forged)) { const list = stringList(skills); if (list.length) forged[id] = [...new Set(list)]; }
+  if (data.forgedVersion === FORGED_VERSION && isRecord(data.forged)) for (const [id, skills] of Object.entries(data.forged)) { const list = stringList(skills).map(canonicalSkillName); if (list.length) forged[id] = [...new Set(list)]; }
   return syncOwned({ active, builds, ...(Object.keys(owned).length ? { owned } : {}), forged });
 }
 
