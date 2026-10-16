@@ -1,3 +1,5 @@
+import { parsePlannedGear, type PlannedGear } from "./plannedGear";
+
 /**
  * 多組配裝與 localStorage 存檔。
  * 一組配裝＝武器／五件防具（gear）＋各部位鑲的漂流石（drifts）＋每件裝備的升級目標（pieces）；
@@ -299,26 +301,31 @@ export function saveStats(settings: StatsSettings) {
 }
 
 /**
- * 匯出／匯入：整份配裝（含漂流石、升級目標）＋素材統計設定存成一個 JSON 檔。
+ * 匯出／匯入：整份配裝、裝備庫、待製作裝備與素材統計設定存成一個 JSON 檔。
  * app 欄位用來認出是這個工具的檔案；version 留給以後格式改變時判斷。
  */
 export const EXPORT_APP = "mhnow-builds";
 
-export function exportFile(state: BuildState, stats: StatsSettings): string {
-  return JSON.stringify({ app: EXPORT_APP, version: 1, exportedAt: new Date().toISOString(), active: state.active, builds: state.builds, ...(state.owned ? { owned: state.owned } : {}), forged: state.forged ?? {}, forgedVersion: FORGED_VERSION, stats }, null, 2);
+export function exportFile(state: BuildState, stats: StatsSettings, plans: PlannedGear[] = []): string {
+  return JSON.stringify({ app: EXPORT_APP, version: 1, exportedAt: new Date().toISOString(), active: state.active, builds: state.builds, ...(state.owned ? { owned: state.owned } : {}), forged: state.forged ?? {}, forgedVersion: FORGED_VERSION, stats, plans }, null, 2);
 }
+
+/** null plans means an older backup: importing it must leave the current plans intact. */
+export type ImportedData = { state: BuildState; stats: StatsSettings | null; plans: PlannedGear[] | null };
 
 /**
  * 讀匯入的檔案。也接受直接從 localStorage 複製出來的存檔（沒有 app 欄位）。
  * 讀不出任何一組有效配裝就回傳 error，不會動到現在的配裝。
  */
-export function parseImport(raw: string): { state: BuildState; stats: StatsSettings | null } | { error: string } {
+export function parseImport(raw: string): ImportedData | { error: string } {
   let data: unknown;
   try { data = JSON.parse(raw); } catch { return { error: "檔案不是有效的 JSON。" }; }
   if (isRecord(data) && data.app !== undefined && data.app !== EXPORT_APP) return { error: "這不是 MHNow 配裝工具匯出的檔案。" };
   const state = readBuildState(data);
   if (!state) return { error: "檔案裡沒有可以讀的配裝。" };
-  return { state, stats: isRecord(data) && isRecord(data.stats) ? readStats(data.stats) : null };
+  if (isRecord(data) && data.plans !== undefined && !Array.isArray(data.plans)) return { error: "待製作裝備資料格式不正確。" };
+  return { state, stats: isRecord(data) && isRecord(data.stats) ? readStats(data.stats) : null,
+    plans: isRecord(data) && Array.isArray(data.plans) ? parsePlannedGear(JSON.stringify(data.plans)) : null };
 }
 
 /**

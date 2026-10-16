@@ -1,7 +1,16 @@
 import { expect, it } from "vitest";
-import { parsePlannedGear, plannedGearId, plannedMaterialKey } from "./plannedGear";
+import { parsePlannedGear, plannedGearId, plannedMaterialKey, mergePlannedGear } from "./plannedGear";
 import { totalMissing } from "./MhnowApp";
 import { waiveGatherMaterials } from "./materialDiscount";
+
+it("merges imports without overwriting existing equipment ranges or adding duplicates", () => {
+  const current = [{ series: "kulu", slot: "helm" as const, current: "5-1", target: "6-1", included: false }];
+  const weapon = { series: "kulu", slot: "weapon" as const, weaponType: "bow", current: "unforged", target: "10-5" };
+  const incoming = [{ ...current[0], current: "7-1", target: "8-1", included: true }, weapon, weapon];
+  expect(mergePlannedGear(current, incoming)).toEqual([...current, weapon]);
+  expect(current).toHaveLength(1);
+  expect(mergePlannedGear(current, [])).toEqual(current);
+});
 
 it("preserves per-equipment inclusion and includes legacy plans by default", () => {
   const plan = { series: "a", slot: "helm", current: "6-1", target: "8-1" };

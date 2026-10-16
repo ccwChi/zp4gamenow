@@ -7,6 +7,17 @@ export const plannedGearId = (item: PlannedGear) => `${item.series}::${item.slot
 /** Same equipment shared with a loadout counts only once in the total. */
 export const plannedMaterialKey = (item: PlannedGear) => item.slot === "weapon" ? `weapon|${item.series}::${item.weaponType}` : `${item.slot}|${item.series}::armor`;
 
+/** Append new equipment, keeping the user's existing ranges and inclusion choices on conflicts. */
+export function mergePlannedGear(current: PlannedGear[], incoming: PlannedGear[]): PlannedGear[] {
+  const seen = new Set(current.map(plannedGearId));
+  return [...current, ...incoming.filter((item) => {
+    const id = plannedGearId(item);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  })];
+}
+
 export function parsePlannedGear(raw: string | null): PlannedGear[] {
   try {
     const value: unknown = JSON.parse(raw ?? "[]");

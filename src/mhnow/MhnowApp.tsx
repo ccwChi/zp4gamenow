@@ -10,7 +10,8 @@ import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
 import { moveBuild } from "./buildStore";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
 import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
-import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, type PlannedGear } from "./plannedGear";
+import { sortSeries } from "./seriesSort";
+import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, mergePlannedGear, type PlannedGear } from "./plannedGear";
 import { DEFAULT_MATERIAL_DISCOUNT, MATERIAL_DISCOUNT_KEY, parseMaterialDiscount, serializeMaterialDiscount, waiveGatherMaterials } from "./materialDiscount";
 
 import qrcode from "qrcode-generator";
@@ -1087,11 +1088,12 @@ function GearBoxPicker({ kind, series, owned, ctx, onRequestSeries, onGrade, onC
   </Modal>;
 }
 
-function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotName, onGrade, onForge, onSkill, onRequestSeries, ready }: {
+function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotName, onGrade, onForge, onSkill, onRequestSeries, ready, expanded, onExpanded }: {
   owned: Record<string, string>; forged: Record<string, string[]>; builds: Build[]; seriesBy: Record<string, Series>; ctx: CardContext;
   weaponTypeName: (type: string) => string; slotName: (slot: ArmorSlot) => string;
   onGrade: (id: string, grade: string) => void; onForge: (id: string, skill: string, on: boolean) => void; onSkill: (name: string, level: number) => void;
   onRequestSeries: (key: string) => void; ready: boolean;
+  expanded: { weapon: boolean; armor: boolean }; onExpanded: (kind: "weapon" | "armor", next: boolean) => void;
 }) {
   const [adding, setAdding] = useState<string | null>(null);
   const [newArmor, setNewArmor] = useState<string | null>(null);
@@ -1101,18 +1103,22 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
   const [armorView, setArmorView] = useState<"slot" | "monster">("slot");
   // 依魔物時：一魔物一行（固定五格，要放得下五張才行）或緊湊排列，由使用者選；放不下五張時只能緊湊。
   const [armorLayout, setArmorLayout] = useState<"row" | "compact">("row");
+  const [monsterSort, setMonsterSort] = useState<"source" | "name">("source");
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(GEARBOX_VIEW_KEY) ?? "null");
       if (saved?.weapon === "monster" || saved?.weapon === "type") setWeaponView(saved.weapon);
       if (saved?.armor === "slot" || saved?.armor === "monster") setArmorView(saved.armor);
       if (saved?.layout === "row" || saved?.layout === "compact") setArmorLayout(saved.layout);
+      if (saved?.sort === "source" || saved?.sort === "name") setMonsterSort(saved.sort);
     } catch { /* 用預設 */ }
   }, []);
-  const choose = (next: { weapon?: "monster" | "type"; armor?: "slot" | "monster"; layout?: "row" | "compact" }) => {
+  const choose = (next: { weapon?: "monster" | "type"; armor?: "slot" | "monster"; layout?: "row" | "compact"; sort?: "source" | "name" }) => {
     const weapon = next.weapon ?? weaponView, armor = next.armor ?? armorView, layout = next.layout ?? armorLayout;
     setWeaponView(weapon); setArmorView(armor); setArmorLayout(layout);
-    try { localStorage.setItem(GEARBOX_VIEW_KEY, JSON.stringify({ weapon, armor, layout })); } catch { /* 只在這次有效 */ }
+    const sort = next.sort ?? monsterSort;
+    setMonsterSort(sort);
+    try { localStorage.setItem(GEARBOX_VIEW_KEY, JSON.stringify({ weapon, armor, layout, sort })); } catch { /* 只在這次有效 */ }
   };
   // 依容器寬度決定一排放幾張卡（最多 5 張）；放不下 5 張時，「依魔物」改成緊湊排列。
   const wrap = useRef<HTMLDivElement>(null);
@@ -1140,7 +1146,8 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
     const users = builds.flatMap((build) => itemKeyOf(build, slot) === itemKey ? [{ build, drifts: (build.drifts[slot] ?? []).slice(0, row.slotGrades.length).filter((pick): pick is DriftPick => !!pick) }] : []);
     return [{ id, slot, itemKey, current, row, users, learned: forged[id] ?? [] }];
   }).sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot) || gradeValue(b.current) - gradeValue(a.current) || a.row.title.localeCompare(b.row.title, "zh-Hant"));
-  const seriesOrder = Object.keys(seriesBy);
+  const sortedSeries = sortSeries(Object.values(seriesBy), monsterSort);
+  const seriesOrder = sortedSeries.map((item) => item.key);
   const monsterOf = (entry: (typeof entries)[number]) => entry.row.item!.key;
   const byMonster = (a: (typeof entries)[number], b: (typeof entries)[number]) => seriesOrder.indexOf(monsterOf(a)) - seriesOrder.indexOf(monsterOf(b));
   const typeOf = (entry: (typeof entries)[number]) => entry.itemKey.split("::")[1] ?? "";
@@ -1195,50 +1202,78 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
     {options.map(([option, text]) => <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}
       className={cx("px-2.5 py-0.5 rounded fs-md border-0 cursor-pointer", value === option ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{text}</button>)}</div>;
 
+  const monsterControls = (kind: "weapon" | "armor") => <>
+    {segmented(`${kind === "weapon" ? "武器" : "防具"}魔物排序`, [["source", "遊戲順序"], ["name", "中文名稱"]] as ["source" | "name", string][], monsterSort, (sort) => choose({ sort }))}
+    <button type="button" disabled={!ready} aria-pressed={expanded[kind]} onClick={() => onExpanded(kind, !expanded[kind])}
+      className={cx("px-2.5 py-1 rounded-md border fs-md", expanded[kind] ? "border-[#91b4a4] bg-[#eef5ef] text-[#375b43]" : "border-[#d5d0c2] bg-white text-[#687168]")}>
+      {expanded[kind] ? "只顯示已登記魔物" : "展開全部魔物"}
+    </button>
+  </>;
+  const emptyGear = (key: string, slot: SlotId, kind: string) => {
+    const rows = ctx.gradeRowsFor(key, kind);
+    const name = slot === "weapon" ? weaponTypeName(kind) : slotName(slot);
+    const title = `${seriesBy[key]?.name ?? key}${name}`;
+    return <button key={gearId(slot, `${key}::${kind}`)} type="button" disabled={!ready || !rows?.length} aria-label={`新增${title}`}
+      title={rows === undefined ? "裝備資料載入中……" : !rows.length ? "這件裝備沒有等級資料" : `新增${title}，預設等級 ${rows[0].grade}`}
+      onClick={() => {
+        if (!rows?.length) return;
+        const id = gearId(slot, `${key}::${kind}`);
+        setNewArmor(id);
+        onGrade(id, rows[0].grade);
+      }} className="min-h-[80px] flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-dashed border-[#d5d0c2] bg-transparent fs-sm text-[#8b938c] hover:bg-[#fffaf0] hover:border-[#bca77e]">
+      <span aria-hidden="true" className="fs-xl">＋</span><span>{name}</span>
+      {!rows?.length ? <small>{rows === undefined ? "載入中……" : "無等級資料"}</small> : null}
+    </button>;
+  };
+  const weaponsByMonster = () => {
+    if (!expanded.weapon) return grid([...weapons].sort((a, b) => byMonster(a, b) || typeOrder.indexOf(typeOf(a)) - typeOrder.indexOf(typeOf(b))).map(card));
+    return <div className="flex flex-col gap-4">{sortedSeries.filter((item) => item.weaponTypes.length).map((item) => <section key={item.key}>
+      {divider(item.name, weapons.filter((entry) => monsterOf(entry) === item.key).length)}
+      {grid(item.weaponTypes.map((type) => {
+        const entry = weapons.find((candidate) => candidate.itemKey === `${item.key}::${type}`);
+        return entry ? card(entry) : emptyGear(item.key, "weapon", type);
+      }))}
+    </section>)}</div>;
+  };
+
   // 依魔物：固定五格，未製作的部位可直接新增；放不下五張時改用緊湊排列。
   const armorByMonster = () => {
     const sorted = [...armors].sort((a, b) => byMonster(a, b) || order.indexOf(a.slot) - order.indexOf(b.slot));
-    if (columns < GEAR_MAX_COLUMNS || armorLayout === "compact") return grid(sorted.map(card));
-    const monsters = [...new Set(sorted.map(monsterOf))];
-    return <div className="flex flex-col gap-2">{monsters.map((key) => <div key={key} className="grid gap-2 items-stretch" style={{ gridTemplateColumns: `repeat(${GEAR_MAX_COLUMNS}, minmax(0, 1fr))` }}>
+    if (!expanded.armor && (columns < GEAR_MAX_COLUMNS || armorLayout === "compact")) return grid(sorted.map(card));
+    const monsters = expanded.armor ? sortedSeries.filter((item) => item.hasArmor).map((item) => item.key) : [...new Set(sorted.map(monsterOf))];
+    return <div className="flex flex-col gap-4">{monsters.map((key) => <section key={key}>
+      {divider(seriesBy[key]?.name ?? key, armors.filter((entry) => monsterOf(entry) === key).length)}
+      <div className="grid gap-2 items-stretch" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
       {ARMOR_SLOTS.map((slot) => { const entry = sorted.find((candidate) => monsterOf(candidate) === key && candidate.slot === slot);
-        if (entry) return card(entry);
-        const rows = ctx.gradeRowsFor(key, "armor");
-        const title = `${seriesBy[key]?.name ?? key}${slotName(slot)}`;
-        return <button key={slot} type="button" disabled={!rows?.length} aria-label={`新增${title}`}
-          title={rows === undefined ? "裝備資料載入中……" : !rows.length ? "這件裝備沒有等級資料" : `新增${title}，預設等級 ${rows[0].grade}`}
-          onClick={() => {
-            if (!rows?.length) return;
-            const id = gearId(slot, `${key}::armor`);
-            setNewArmor(id);
-            onGrade(id, rows[0].grade);
-          }} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-dashed border-[#d5d0c2] bg-transparent fs-sm text-[#8b938c] hover:bg-[#fffaf0] hover:border-[#bca77e]">
-          <span aria-hidden="true" className="fs-xl">＋</span><span>{slotName(slot)}</span>
-        </button>; })}
-    </div>)}</div>;
+        return entry ? card(entry) : emptyGear(key, slot, "armor"); })}
+      </div>
+    </section>)}</div>;
   };
 
   return <div ref={wrap} className="flex flex-col gap-5">
     <section aria-label="武器">
       {heading("武器", weapons.length, <>{segmented("武器排列方式", [["monster", "依魔物"], ["type", "依種類"]] as ["monster" | "type", string][], weaponView, (next) => choose({ weapon: next }))}
+        {weaponView === "monster" ? monsterControls("weapon") : null}
         <button type="button" disabled={!ready} onClick={() => setPicker("weapon")} className="ml-auto px-3 py-1 rounded-md border border-dashed border-[#bca77e] bg-white fs-md text-[#687168] hover:bg-[#fffaf0]">＋新增武器</button></>)}
-      {!weapons.length ? <p className={NOTE}>尚未登記武器，可直接新增，或在配裝頁輸入目前等級後自動帶入。</p> : weaponView === "monster"
-        ? grid([...weapons].sort((a, b) => byMonster(a, b) || typeOrder.indexOf(typeOf(a)) - typeOrder.indexOf(typeOf(b))).map(card))
+      {!weapons.length && !(weaponView === "monster" && expanded.weapon) ? <p className={NOTE}>尚未登記武器，可直接新增，或在配裝頁輸入目前等級後自動帶入。</p> : weaponView === "monster"
+        ? weaponsByMonster()
         : <div className="flex flex-col gap-3">{typeOrder.map((type) => { const group = weapons.filter((entry) => typeOf(entry) === type).sort(byMonster);
           return group.length ? <div key={type}>{divider(weaponTypeName(type), group.length)}{grid(group.map(card))}</div> : null; })}</div>}
     </section>
     <section aria-label="裝備">
       {heading("裝備", armors.length, <>{segmented("裝備排列方式", [["slot", "依部位"], ["monster", "依魔物"]] as ["slot" | "monster", string][], armorView, (next) => choose({ armor: next }))}
         {armorView === "monster" ? <>
+          {monsterControls("armor")}
+          {!expanded.armor ? <>
           <div role="group" aria-label="依魔物的排法" className="flex rounded-md bg-[#eef0ed] p-0.5">
             {([["row", "一魔物一行"], ["compact", "緊湊"]] as const).map(([option, text]) => { const blocked = option === "row" && columns < GEAR_MAX_COLUMNS;
               return <button key={option} aria-pressed={(blocked ? "compact" : armorLayout) === option} disabled={blocked} onClick={() => choose({ layout: option })}
                 title={blocked ? "畫面放不下五張卡，無法一魔物一行" : undefined}
                 className={cx("px-2.5 py-0.5 rounded fs-md border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-45", (blocked ? "compact" : armorLayout) === option ? "bg-white text-[#253229] font-bold shadow-[0_1px_3px_#ccd1ca]" : "bg-transparent text-[#687168]")}>{text}</button>; })}
           </div>
-          {columns < GEAR_MAX_COLUMNS ? <small className="fs-sm text-[#8b938c]">畫面放不下五件，只能緊湊排列</small> : null}</> : null}
+          {columns < GEAR_MAX_COLUMNS ? <small className="fs-sm text-[#8b938c]">畫面放不下五件，只能緊湊排列</small> : null}</> : null}</> : null}
         <button type="button" disabled={!ready} onClick={() => setPicker("armor")} className="ml-auto px-3 py-1 rounded-md border border-dashed border-[#bca77e] bg-white fs-md text-[#687168] hover:bg-[#fffaf0]">＋新增魔物防具</button></>)}
-      {!armors.length ? <p className={NOTE}>尚未登記防具，可選擇魔物後逐件新增，或在配裝頁輸入目前等級後自動帶入。</p> : armorView === "slot"
+      {!armors.length && !(armorView === "monster" && expanded.armor) ? <p className={NOTE}>尚未登記防具，可選擇魔物後逐件新增，或在配裝頁輸入目前等級後自動帶入。</p> : armorView === "slot"
         ? <div className="flex flex-col gap-3">{ARMOR_SLOTS.map((slot) => { const group = armors.filter((entry) => entry.slot === slot);
           return group.length ? <div key={slot}>{divider(slotName(slot), group.length)}{grid(group.map(card))}</div> : null; })}</div>
         : armorByMonster()}
@@ -1577,9 +1612,11 @@ export default function MhnowApp() {
   const [index, setIndex] = useState<SeriesIndex | null>(null);
   const [details, setDetails] = useState<Record<string, SeriesDetail>>({});
   const [failedDetails, setFailedDetails] = useState<Record<string, boolean>>({});
+  const pendingDetails = useRef(new Set<string>());
   const [icons, setIcons] = useState<Record<string, string>>({});
   const [view, setView] = useState<"loadout" | "calculator" | "driftstone" | "community" | "gearbox">("loadout");
   const [gearboxSeries, setGearboxSeries] = useState("");
+  const [gearboxExpanded, setGearboxExpanded] = useState({ weapon: false, armor: false });
   const [plans, setPlans] = useState<PlannedGear[]>([]);
   const [plansRestored, setPlansRestored] = useState(false);
   const [plansStorageError, setPlansStorageError] = useState(false);
@@ -1649,7 +1686,7 @@ export default function MhnowApp() {
 
   // 匯出／匯入：選了檔案先讀進 importing，再問要取代還是加在後面；結果（或錯誤）顯示在標題下一行。
   const fileInput = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState<{ state: BuildState; stats: StatsSettings | null } | null>(null);
+  const [importing, setImporting] = useState<Extract<ReturnType<typeof parseImport>, { state: BuildState }> | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
   // 分享單組配裝：sharing 是正在分享的配裝 id；receiving 是貼上（或從網址帶進來）的文字，解析後確認才加入。
@@ -1723,14 +1760,18 @@ export default function MhnowApp() {
     : [...builds.builds.flatMap((build) => rowsByBuild[build.id].flatMap((row) => (row.item
       && (openTiers[`${build.id}:${row.id}`] || (build.showMissing && pieceOf(build, row.id, row.itemKey).target)) ? [row.item.key] : []))),
     ...statsPlan.map((entry) => entry.series), ...plans.map((plan) => plan.series),
-    ...(view === "gearbox" ? [gearboxSeries, ...[...Object.keys(builds.owned ?? {}), ...Object.keys(builds.forged ?? {})].map((id) => id.split("|")[1]?.split("::")[0])].filter((key): key is string => !!key) : [])])].join(",");
+    ...(view === "gearbox" ? [gearboxSeries,
+      ...allSeries.filter((item) => (gearboxExpanded.weapon && item.weaponTypes.length > 0) || (gearboxExpanded.armor && item.hasArmor)).map((item) => item.key),
+      ...[...Object.keys(builds.owned ?? {}), ...Object.keys(builds.forged ?? {})].map((id) => id.split("|")[1]?.split("::")[0])].filter((key): key is string => !!key) : [])])].join(",");
   useEffect(() => {
     for (const key of neededSeries ? neededSeries.split(",") : []) {
-      if (details[key] || failedDetails[key]) continue;
+      if (details[key] || failedDetails[key] || pendingDetails.current.has(key)) continue;
+      pendingDetails.current.add(key);
       fetch(dataPath(`/mhnow/series/${key}.json`))
         .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
         .then((detail: SeriesDetail) => setDetails((state) => ({ ...state, [detail.key]: detail })))
-        .catch(() => setFailedDetails((state) => ({ ...state, [key]: true })));
+        .catch(() => setFailedDetails((state) => ({ ...state, [key]: true })))
+        .finally(() => pendingDetails.current.delete(key));
     }
   }, [neededSeries, details, failedDetails]);
   /** 某系列某種類（armor 或武器種類）的升級表；undefined 表示還在載入。 */
@@ -1774,7 +1815,7 @@ export default function MhnowApp() {
   function exportBuilds() {
     const today = new Date();
     const stamp = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-    const url = URL.createObjectURL(new Blob([exportFile(builds, stats)], { type: "application/json" }));
+    const url = URL.createObjectURL(new Blob([exportFile(builds, stats, plans)], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = `mhnow-配裝-${stamp}.json`;
@@ -1792,12 +1833,15 @@ export default function MhnowApp() {
     if (mode === "replace") {
       setBuilds(importing.state);
       if (importing.stats) setStats(importing.stats);
+      if (importing.plans !== null) setPlans(importing.plans);
       setOpenTiers({});
-      setImportMessage(`已匯入 ${importing.state.builds.length} 組配裝，取代了原本的配裝。`);
+      setImportMessage(`已匯入 ${importing.state.builds.length} 組配裝，取代了原本的配裝${importing.plans !== null ? `；已還原 ${importing.plans.length} 件待製作裝備` : "；保留原有待製作裝備"}。`);
     } else {
       const result = appendBuilds(builds, importing.state.builds);
       setBuilds(result.state);
-      setImportMessage(`已加入 ${result.added} 組配裝${result.skipped ? `；超過 ${MAX_BUILDS} 組上限，另有 ${result.skipped} 組沒有匯入` : ""}。`);
+      const merged = mergePlannedGear(plans, importing.plans ?? []);
+      if (importing.plans !== null) setPlans(merged);
+      setImportMessage(`已加入 ${result.added} 組配裝${result.skipped ? `；超過 ${MAX_BUILDS} 組上限，另有 ${result.skipped} 組沒有匯入` : ""}${importing.plans !== null ? `；新增 ${merged.length - plans.length} 件待製作裝備` : ""}。`);
     }
     setImporting(null);
   }
@@ -1956,6 +2000,7 @@ export default function MhnowApp() {
       <PageHeading title="我的裝備庫" hint="可直接登記武器與防具；配裝畫面輸入的裝備等級也會自動帶入" />
       <GearBox owned={builds.owned ?? {}} forged={builds.forged ?? {}} builds={builds.builds} seriesBy={seriesBy} ctx={cardContext} weaponTypeName={weaponTypeName} slotName={slotName}
         ready={restored && loaded} onRequestSeries={setGearboxSeries}
+        expanded={gearboxExpanded} onExpanded={(kind, next) => setGearboxExpanded((state) => ({ ...state, [kind]: next }))}
         onForge={(id, skill, on) => setBuilds((state) => setForged(state, id, skill, on))} onGrade={(id, grade) => setBuilds((state) => setOwnedGrade(state, id, grade))} onSkill={(name, level) => setSkillTip({ name, level })} />
     </section>
 
@@ -2057,14 +2102,15 @@ export default function MhnowApp() {
     {importing ? <Modal title="匯入配裝" narrow onClose={() => setImporting(null)}>
       <p className="mt-0 mb-2 fs-md text-[#2b332c]">檔案裡有 <b>{importing.state.builds.length}</b> 組配裝：</p>
       <p className="mt-0 mb-3 fs-md text-[#5b635c] leading-[1.6]">{importing.state.builds.slice(0, 8).map((build) => build.name || "（未命名）").join("、")}{importing.state.builds.length > 8 ? ` 等 ${importing.state.builds.length} 組` : ""}</p>
+      <p className="mt-0 mb-3 fs-md text-[#5b635c]">{importing.plans !== null ? `另含 ${importing.plans.length} 件待製作裝備（含目前／目標階級及統計勾選）。` : "舊版檔案未包含待製作裝備，匯入時會保留目前清單。"}</p>
       <div className="flex flex-col gap-2">
-        <button onClick={() => { if (window.confirm(`現在的 ${builds.builds.length} 組配裝會被清掉，確定要取代嗎？`)) applyImport("replace"); }}
+        <button onClick={() => { if (window.confirm(`現在的 ${builds.builds.length} 組配裝及裝備庫${importing.plans !== null ? `、${plans.length} 件待製作裝備` : ""}會被檔案內容取代，確定要取代嗎？`)) applyImport("replace"); }}
           className="py-2 px-3 border border-[#e3b8b4] rounded-lg bg-white text-[#b23a30] fs-md text-left cursor-pointer hover:bg-[#fff3ef]">
-          <b>取代全部</b><small className="block fs-sm text-[#8b938c]">清掉現在的 {builds.builds.length} 組，換成檔案裡的</small></button>
-        <button disabled={builds.builds.length >= MAX_BUILDS} onClick={() => applyImport("append")}
+          <b>取代全部</b><small className="block fs-sm text-[#8b938c]">以檔案取代配裝與裝備庫{importing.plans !== null ? "，並還原待製作清單" : "，保留原有待製作清單"}</small></button>
+        <button disabled={builds.builds.length >= MAX_BUILDS && !importing.plans?.length} onClick={() => applyImport("append")}
           className="py-2 px-3 border border-[#cfc7b4] rounded-lg bg-white text-[#2b332c] fs-md text-left cursor-pointer hover:border-[#9aa39b] disabled:cursor-default">
-          <b>加在後面</b><small className="block fs-sm text-[#8b938c]">{builds.builds.length >= MAX_BUILDS ? `已經有 ${MAX_BUILDS} 組，放不下了`
-            : builds.builds.length + importing.state.builds.length > MAX_BUILDS ? `保留現在的，最多只能再加 ${MAX_BUILDS - builds.builds.length} 組` : "保留現在的配裝，並將新紀錄置於最後"}</small></button>
+          <b>加在後面</b><small className="block fs-sm text-[#8b938c]">{builds.builds.length >= MAX_BUILDS ? `配裝已達 ${MAX_BUILDS} 組上限`
+            : builds.builds.length + importing.state.builds.length > MAX_BUILDS ? `保留現在的，最多只能再加 ${MAX_BUILDS - builds.builds.length} 組` : "保留現在的配裝，並將新紀錄置於最後"}{importing.plans !== null ? "；合併待製作清單，同件裝備保留目前設定" : ""}</small></button>
       </div>
     </Modal> : null}
 

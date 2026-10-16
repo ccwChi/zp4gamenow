@@ -114,12 +114,33 @@ describe("exportFile / parseImport", () => {
   const stats = { open: true, excludedBuilds: ["b0"], hiddenCategories: ["r1"] };
   it("reads back everything it exported", () => {
     const result = parseImport(exportFile(state, stats));
-    expect(result).toEqual({ state, stats });
+    expect(result).toEqual({ state, stats, plans: [] });
   });
   it("also accepts a save copied straight from localStorage", () => {
     const result = parseImport(serializeBuildState(state));
     expect("state" in result && result.state).toEqual(state);
     expect("state" in result && result.stats).toBeNull();
+    expect("state" in result && result.plans).toBeNull();
+  });
+  it("backs up planned weapon and armor ranges and all material inclusion choices", () => {
+    const plans = [
+      { series: "kulu", slot: "weapon" as const, weaponType: "long-sword", current: "3-1", target: "10-5", included: false },
+      { series: "kulu", slot: "helm" as const, current: "unforged", target: "6-1", included: true },
+    ];
+    const settings = { ...stats, excludedBuilds: ["planned-gear"] };
+    expect(parseImport(exportFile(state, settings, plans))).toEqual({ state, stats: settings, plans });
+  });
+  it("distinguishes a legacy backup from an explicitly empty planned list", () => {
+    const legacy = JSON.parse(exportFile(state, stats));
+    delete legacy.plans;
+    expect(parseImport(JSON.stringify(legacy))).toEqual({ state, stats, plans: null });
+    expect(parseImport(exportFile(state, stats, []))).toEqual({ state, stats, plans: [] });
+  });
+  it("validates planned equipment in imported files", () => {
+    const data = JSON.parse(exportFile(state, stats));
+    expect(parseImport(JSON.stringify({ ...data, plans: "broken" }))).toEqual({ error: "待製作裝備資料格式不正確。" });
+    const plan = { series: "kulu", slot: "helm", current: "unforged", target: "6-1" };
+    expect(parseImport(JSON.stringify({ ...data, plans: [null, plan, plan, { ...plan, slot: "bad" }] }))).toEqual({ state, stats, plans: [plan] });
   });
   it("refuses broken files, other apps' files and files with no valid build", () => {
     expect(parseImport("{壞掉")).toEqual({ error: "檔案不是有效的 JSON。" });
