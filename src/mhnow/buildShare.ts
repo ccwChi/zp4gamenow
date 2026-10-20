@@ -13,8 +13,8 @@ export const SHARE_PARAM = "share";
 /** 依位置存，不寫欄位名稱，分享碼（和 QR Code）才小：裝備依這個順序，漂流石依防具部位順序。 */
 const GEAR_ORDER = ["weapon", "helm", "mail", "gloves", "belt", "greaves"];
 const DRIFT_ORDER = GEAR_ORDER.slice(1);
-/** [名稱, 每格裝備（沒裝為 ""）, 每件防具的漂流石（每洞 [技能, 顏色]，空洞為 0）] */
-type Payload = [string, string[], ([string, string] | 0)[][]];
+/** [名稱, 每格裝備（沒裝為 ""）, 每件防具的漂流石（每洞 [技能, 顏色]，空洞為 0）, 武器風格代號（沒選就省略）] */
+type Payload = [string, string[], ([string, string] | 0)[][], string?];
 
 function toBase64Url(bytes: Uint8Array) {
   let binary = "";
@@ -37,7 +37,7 @@ export function encodeBuildShare(build: Build): string {
   const gear = trimEnd(GEAR_ORDER.map((slot) => build.gear[slot] ?? ""), (key) => !key);
   const drifts = trimEnd(DRIFT_ORDER.map((slot) => trimEnd(build.drifts[slot] ?? [], (pick) => !pick)
     .map((pick): [string, string] | 0 => (pick ? [pick.skill, pick.color] : 0))), (picks) => !picks.length);
-  const payload: Payload = [build.name, gear, drifts];
+  const payload: Payload = build.style ? [build.name, gear, drifts, build.style] : [build.name, gear, drifts];
   return PREFIX + toBase64Url(deflateSync(strToU8(JSON.stringify(payload)), { level: 9 }));
 }
 
@@ -58,7 +58,7 @@ export function decodeBuildShare(text: string): { build: Build } | { error: stri
   let data: unknown;
   try { data = JSON.parse(strFromU8(inflateSync(fromBase64Url(code.slice(PREFIX.length))))); } catch { return { error: "分享碼不完整或已損壞，請重新複製一次。" }; }
   if (!Array.isArray(data)) return { error: "分享碼格式不對。" };
-  const [name, gearList, driftList] = data as unknown[];
+  const [name, gearList, driftList, style] = data as unknown[];
   const gear: Record<string, unknown> = {};
   if (Array.isArray(gearList)) GEAR_ORDER.forEach((slot, position) => { gear[slot] = gearList[position]; });
   const drifts: Record<string, (DriftPick | null)[]> = {};
@@ -67,7 +67,7 @@ export function decodeBuildShare(text: string): { build: Build } | { error: stri
     if (Array.isArray(picks) && picks.length) drifts[slot] = picks.map((pick) => (Array.isArray(pick) && typeof pick[0] === "string" && pick[0]
       ? { skill: pick[0], color: typeof pick[1] === "string" ? pick[1] : "" } : null));
   });
-  const build = parseBuild({ id: "shared", name: typeof name === "string" ? name : "", gear, drifts, pieces: {}, showMissing: false });
+  const build = parseBuild({ id: "shared", name: typeof name === "string" ? name : "", gear, drifts, pieces: {}, showMissing: false, style });
   if (!build || !Object.keys(build.gear).length) return { error: "分享碼裡沒有任何裝備。" };
   return { build };
 }

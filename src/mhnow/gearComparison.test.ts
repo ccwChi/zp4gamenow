@@ -61,3 +61,10 @@ it("counts available holes independently of equipped stones and updates after re
   expect(equipmentDriftSlots(initialBuildState().builds[0], series)).toBe(0);
 });
 
+
+it("drops a weapon style that does not belong to the new weapon type", () => {
+  const build = { ...equipped(), style: "absolute_power_shot" };
+  expect(replaceComparisonGear(build, "weapon", "a::bow").style).toBe("absolute_power_shot");
+  expect(replaceComparisonGear(build, "weapon", "a::hammer").style).toBeUndefined();
+  expect(replaceComparisonGear(build, "helm", "b").style).toBe("absolute_power_shot");
+});

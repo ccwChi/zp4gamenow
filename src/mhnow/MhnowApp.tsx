@@ -11,6 +11,10 @@ import { moveBuild } from "./buildStore";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
 import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
 import { sortSeries } from "./seriesSort";
+import { WEAPON_ELEMENT_NAMES, hasWeaponElement } from "./weaponElements";
+import { weaponSetup } from "./recommendBuilds";
+import { styleName, stylesFor } from "./weaponStyles";
+import { ElementFilter } from "./ElementFilter";
 import { compareSkillTotals, equipmentDriftSlots, equipmentSkillTotals, replaceComparisonGear } from "./gearComparison";
 import { SkillSelector } from "./SkillSelector";
 import { PLANNED_GEAR_KEY, PLANNED_STATS_ID, plannedGearId, plannedMaterialKey, parsePlannedGear, mergePlannedGear, type PlannedGear } from "./plannedGear";
@@ -34,7 +38,7 @@ type WeaponTraits = {
   kinsect?: { label: string; value: string }[];
 };
 /** weaponSkills：技能跟通用武器不同的武器種類（如碎龍的輕／重弩），有的話整份取代 skills.weapon。 */
-type Series = { key: string; name: string; id?: number; weaponElements?: string[]; unlock: number; weaponTypes: string[]; hasArmor: boolean; skills: Record<string, SeriesSkill[]>; weaponSkills?: Record<string, SeriesSkill[]>; traits: Record<string, WeaponTraits>; slots?: Partial<Record<ArmorSlot, number[]>> };
+type Series = { key: string; name: string; id?: number; weaponElements?: string[]; weaponElement?: string; weaponEff?: Record<string, string>; weaponStats?: Record<string, { atk: number[]; ele?: number[]; crit?: number[] }>; unlock: number; weaponTypes: string[]; hasArmor: boolean; skills: Record<string, SeriesSkill[]>; weaponSkills?: Record<string, SeriesSkill[]>; traits: Record<string, WeaponTraits>; slots?: Partial<Record<ArmorSlot, number[]>> };
 
 export { skillsAtGrade };
 
@@ -202,26 +206,35 @@ export function searchSeries(series: Series[], query: string, slot?: string): { 
 }
 
 /** slot：配裝時正在選的部位，給技能搜尋用；計算器不分部位就不傳，只搜名稱。value 給陣列就是複選（素材減免用）。 */
-/** compact：圖片模式改成跟武器種類一樣大的小方塊（40px、自動換行），給建議配裝用。 */
-function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot, placeholder, compact }: {
+/**
+ * 全站的選魔物都用這一套（大小、排列、搜尋、圖片／名稱切換都一樣）。
+ * elements：顯示武器屬性篩選（挑武器的地方才給；挑防具沒有意義）。weaponType：已經限定武器種類時，屬性只看那一種武器。
+ */
+function MonsterPicker({ series, value, onPick, icons, display, onDisplay, query, onQuery, slot, placeholder, elements, weaponType }: {
   series: Series[]; value: string | string[]; onPick: (key: string) => void; icons: Record<string, string>;
-  display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void; slot?: string; placeholder?: string; compact?: boolean;
+  display: "image" | "name"; onDisplay: (next: "image" | "name") => void; query: string; onQuery: (next: string) => void;
+  slot?: string; placeholder?: string; elements?: boolean; weaponType?: string;
 }) {
+  const [element, setElement] = useState("");
   const small = display === "image";
   const ranks = new Map(series.map((item, position) => [item.key, position]));
-  const visible = searchSeries(series, query, slot).sort((a, b) => ranks.get(a.item.key)! - ranks.get(b.item.key)!);
+  const found = searchSeries(series, query, slot).sort((a, b) => ranks.get(a.item.key)! - ranks.get(b.item.key)!);
+  const visible = element ? found.filter(({ item }) => hasWeaponElement(item, element, weaponType)) : found;
   const modeButton = (mode: "image" | "name", label: string) => <button
     className={cx("border-0 py-[5px] px-3 rounded-[5px]", display === mode ? "bg-white text-[#253229] shadow-[0_1px_4px_#ccd1ca]" : "bg-transparent text-[#687168]")}
     onClick={() => onDisplay(mode)}>{label}</button>;
   return <div>
-    <div className="flex items-center justify-between mb-[9px] fs-md text-[#687168] max-[620px]:flex-wrap max-[620px]:gap-2">
-      <span>① 選擇魔物（{visible.length}）</span>
-      <input aria-label="搜尋" value={query} onChange={(event) => onQuery(event.target.value)} placeholder={placeholder ?? (slot ? "搜尋魔物、裝備或技能" : "搜尋魔物或裝備")}
-        className="flex-1 min-w-0 mx-3 my-0 py-2 px-[11px] border border-[#dfe2dc] rounded-[7px] bg-[#f8f8f5] fs-md outline-none max-[620px]:order-3 max-[620px]:basis-full max-[620px]:m-0" />
-      <div className="flex bg-[#eef0ed] rounded-md p-0.5">{modeButton("image", "圖片")}{modeButton("name", "名稱")}</div>
+    {/* 搜尋、屬性篩選收在同一塊淺色工具列裡，下面才是魔物本身，視覺上分成「條件」與「結果」兩層。 */}
+    <div className="mb-2 p-2 rounded-lg border border-[#e3dac6] bg-[#fffaf0] space-y-1.5">
+      <div className="flex items-center justify-between gap-2 fs-md text-[#687168] max-[620px]:flex-wrap">
+        <span className="shrink-0">① 選擇魔物（{visible.length < series.length ? `${visible.length} / ${series.length}` : visible.length}）</span>
+        <input aria-label="搜尋" value={query} onChange={(event) => onQuery(event.target.value)} placeholder={placeholder ?? (slot ? "搜尋魔物、裝備或技能" : "搜尋魔物或裝備")}
+          className="flex-1 min-w-0 py-1.5 px-2.5 border border-[#dfe2dc] rounded-md bg-white fs-md outline-none max-[620px]:order-3 max-[620px]:basis-full" />
+        <div className="flex shrink-0 bg-[#eef0ed] rounded-md p-0.5">{modeButton("image", "圖片")}{modeButton("name", "名稱")}</div>
+      </div>
+      {elements ? <ElementFilter value={element} onChange={setElement} /> : null}
     </div>
-    {visible.length ? <div className={cx("monster-picker-options", small ? cx("flex flex-wrap gap-1 overflow-auto content-start", compact ? "max-h-[220px]" : "max-h-[290px] max-[760px]:max-h-[250px]") : cx("grid gap-1 h-[290px] max-h-[290px] overflow-auto content-start max-[760px]:h-[250px] max-[760px]:max-h-[250px]",
-      "grid-cols-[repeat(auto-fill,minmax(96px,1fr))]"))}>
+    {visible.length ? <div className={cx("monster-picker-options content-start", small ? "flex flex-wrap gap-1" : "grid gap-1 grid-cols-[repeat(auto-fill,minmax(96px,1fr))]")}>
       {visible.map(({ item, skill }) => { const active = Array.isArray(value) ? value.includes(item.key) : value === item.key; return <button key={item.key}
         title={skill ? `${item.name}（${skill.name} ${skill.level}）` : item.name} aria-pressed={Array.isArray(value) ? active : undefined} onClick={() => onPick(item.key)}
         className={cx("min-w-0 p-[5px] border rounded-[7px] flex flex-col items-center justify-center text-[#2e3731] cursor-pointer",
@@ -267,7 +280,7 @@ function Modal({ title, onClose, children, narrow, sheet, monsterSelection, clas
   }, [onClose]);
   // sheet：手機版從畫面底部滑出（drawer），桌機版維持置中視窗。
   return <div className={cx("fixed inset-0 bg-[rgba(20,26,20,.45)] flex items-center justify-center p-5 z-50", sheet ? "max-[620px]:items-end max-[620px]:p-0" : "max-[620px]:p-2")} onClick={onClose}>
-    <div className={cx("bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]", monsterSelection && "monster-selection-dialog", className)} onClick={(event) => event.stopPropagation()}>
+    <div className={cx("app-modal bg-white rounded-xl w-full max-h-[86vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,.25)]", narrow ? "app-modal-narrow max-w-[360px]" : "max-w-[760px]", sheet && "max-[620px]:max-w-none max-[620px]:rounded-b-none max-[620px]:max-h-[70vh]", monsterSelection && "monster-selection-dialog", className)} onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between py-3.5 px-[18px] max-[620px]:py-2.5 max-[620px]:px-3 border-b border-[#e5e7e2] flex-none">
         <strong className="fs-lg">{title}</strong>
         <button aria-label="關閉" onClick={onClose} className="border-0 bg-[#f0f1ed] rounded-full w-7 h-7 fs-lg leading-none cursor-pointer text-[#4b5d50]">✕</button>
@@ -330,7 +343,7 @@ function WeaponChooser({ series, icons, value, onPick }: { series: Series[]; ico
       </button>; })}
     </div>
     <MonsterPicker series={type ? series.filter((item) => item.weaponTypes.includes(type)).map((item) => ({ ...item, name: weaponSeriesName(item.key, type, item.name) })) : series}
-      value={monster} icons={type ? iconsForWeapon(icons, type) : icons} compact
+      value={monster} icons={type ? iconsForWeapon(icons, type) : icons} elements weaponType={type}
       display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} onPick={(key) => choose(type, monster === key ? "" : key)} />
   </>;
 }
@@ -891,9 +904,11 @@ function CurrentGradeInput({ value, title, onCommit, autoFocus = false, emptyFal
  * readOnly：只看不改（社群配裝用）。不顯示名稱／缺少素材／分享／刪除／依技能選裝備，裝備列不能點，沒有升級明細；
  * 頂端換成 header、最底下接 footer。
  */
-function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onSkill, onSkillGear, onChange, onDelete, onShare, readOnly, header, footer }: {
+function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onToggle, onDrift, onStyle, onSkill, onSkillGear, onChange, onDelete, onShare, readOnly, header, footer }: {
   build: Build; rows: GearRow[]; ctx: CardContext; editingSlot: SlotId | null; open: (slot: SlotId) => boolean; canDelete: boolean;
   onEdit: (slot: SlotId) => void; onToggle: (slot: SlotId) => void; onDrift: (slot: ArmorSlot, index: number) => void; onSkill: (name: string, level: number) => void;
+  /** 點武器風格（唯讀的社群卡片不給）。 */
+  onStyle?: () => void;
   onChange: (update: (build: Build) => Build) => void; onDelete: () => void; onSkillGear: () => void; onShare: () => void;
   readOnly?: boolean; header?: ReactNode; footer?: ReactNode;
 }) {
@@ -954,6 +969,17 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
             </span>
           </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="fs-lg font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
         </button>
+        {/* 武器風格放在防具漂流石洞的位置，但是直接寫出名稱（一把武器只有一個，比圖示好認）。 */}
+        {row.item && row.id === "weapon" && stylesFor(row.kind).length ? <span className="flex-none flex items-center px-1">
+          <button type="button" tabIndex={readOnly ? -1 : undefined} disabled={readOnly || !onStyle}
+            title={readOnly ? (build.style ? `武器風格：${styleName(build.style)}` : "沒有選風格") : build.style ? `武器風格：${styleName(build.style)}，點擊更換` : "點擊選武器風格"}
+            aria-label={build.style ? `武器風格：${styleName(build.style)}` : "選武器風格"}
+            onClick={() => onStyle?.()}
+            className={cx("flex items-center gap-1 whitespace-nowrap py-1 px-2 rounded-full border fs-md font-bold disabled:opacity-100",
+              readOnly ? "cursor-default" : "cursor-pointer",
+              build.style ? "border-[#8a6bbf] bg-[#f1ebfb] text-[#5b3f93]" : cx("border-dashed border-[#b9b2c6] bg-white text-[#8a939c]", !readOnly && "hover:border-[#8a6bbf] hover:text-[#5b3f93]"))}>
+            <span aria-hidden="true" className="fs-lg leading-none">{build.style ? "✦" : "✧"}</span>{build.style ? styleName(build.style) : "風格"}</button>
+        </span> : null}
         {row.item && row.slotGrades.length ? <span className="flex-none flex items-center gap-0.5 px-0.5">
           {row.slotGrades.map((grade, position) => { const pick = drifts[position]; return <button key={position} tabIndex={readOnly ? -1 : undefined}
             className={cx("border-0 bg-transparent py-1 px-[3px] rounded-md fs-xl leading-none", readOnly ? "cursor-default" : "cursor-pointer hover:bg-[#f3ecdb]", pick ? "" : "text-[#8a939c]", !readOnly && !pick && "hover:text-[#39423a]")}
@@ -1083,7 +1109,8 @@ function GearBoxPicker({ kind, series, owned, ctx, onRequestSeries, onGrade, onC
       </button>)}
     </div> : null}
     <MonsterPicker series={series.filter((entry) => kind === "armor" ? entry.hasArmor : weaponType ? entry.weaponTypes.includes(weaponType) : entry.weaponTypes.length > 0)}
-      value={monster} onPick={(key) => { setMonster(key); onRequestSeries(key); }} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} />
+      value={monster} onPick={(key) => { setMonster(key); onRequestSeries(key); }} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery}
+      elements={kind === "weapon"} weaponType={weaponType} />
     {item ? <>
       <p className="fs-md text-[#687168]">{item.name}：{kind === "armor" ? "點選要登記的部位，可逐件新增。" : "點選要登記的武器。"}新增後可直接輸入等級，留空使用最低等級。</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{candidates.map((candidate) => {
@@ -1354,11 +1381,18 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
   const [slot, setSlot] = useState<SlotId>("helm");
   const [searchWeapons, setSearchWeapons] = useState(false);
   const [weaponType, setWeaponType] = useState(() => build.gear.weapon?.split("::")[1] ?? "");
-  const [choosingWeapon, setChoosingWeapon] = useState(false);
+  /** 指定魔物：add 是把那隻魔物的裝備加進候選（不會換上），replace 是武器列原本的直接更換。 */
+  const [choosing, setChoosing] = useState<{ slot: SlotId; mode: "add" | "replace" } | null>(null);
+  /** 技能篩選之外、自己指定加進候選的裝備，每個部位各一組。 */
+  const [extras, setExtras] = useState<Partial<Record<SlotId, string[]>>>({});
+  const [monsterQuery, setMonsterQuery] = useState("");
+  const [monsterDisplay, setMonsterDisplay] = useState<"image" | "name">("image");
+  /** 目前武器的特性（彈種、箭種、蟲棍…）視窗。 */
+  const [showTraits, setShowTraits] = useState(false);
   const candidateList = useRef<HTMLDivElement>(null);
   const candidateGroups = useRef<Partial<Record<SlotId, HTMLElement | null>>>({});
   const equippedWeaponType = build.gear.weapon?.split("::")[1] ?? "";
-  useEffect(() => { setSlot("helm"); setChoosingWeapon(false); setSearchWeapons(false); }, [build.id]);
+  useEffect(() => { setSlot("helm"); setChoosing(null); setExtras({}); setSearchWeapons(false); setShowTraits(false); }, [build.id]);
   useEffect(() => { setWeaponType(equippedWeaponType); }, [build.id, equippedWeaponType]);
   const seriesBy = useMemo(() => Object.fromEntries(series.map((item) => [item.key, item])), [series]);
   const equipped = gearRowsOf(build, seriesBy, (type) => WEAPON_NAMES[type] ?? type, (part) => SLOT_NAMES[part]);
@@ -1372,12 +1406,38 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
   const skillRows = compareSkillTotals(totals, totals, wanted);
   const toggleSkill = (name: string) => setChosen((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
   const slotTitle = (part: SlotId) => part === "weapon" ? "武器" : SLOT_NAMES[part];
+  const equippedTitle = (part: SlotId) => { const row = equipped.find((item) => item.id === part); return row?.item ? row.title : "未選裝備"; };
+  const toggleExtra = (part: SlotId, key: string) => setExtras((current) => {
+    const list = current[part] ?? [];
+    return { ...current, [part]: list.includes(key) ? list.filter((item) => item !== key) : [...list, key] };
+  });
+  /** 指定的候選：跟 gearForSkill 的項目同形狀，才能跟技能篩出來的候選排在一起。 */
+  const extraGear = (part: SlotId, key: string) => {
+    const [seriesKey, type] = key.split("::");
+    const item = seriesBy[seriesKey];
+    if (!item) return [];
+    const entries = part === "weapon" ? seriesSkills(item, "weapon", type) : seriesSkills(item, part);
+    const levels = skillsAtGrade(entries, MAX_GRADE);
+    return [{ slot: part, key, title: `${item.name}${part === "weapon" ? (WEAPON_NAMES[type] ?? type) : SLOT_NAMES[part]}`, entries,
+      traits: part === "weapon" ? item.traits[type] : undefined, level: wanted.reduce((sum, name) => sum + (levels[name] ?? 0), 0) }];
+  };
+  /** 武器升滿（G10-5）的攻擊／屬性／會心；key 是「系列::武器種類」。 */
+  const weaponStats = (key: string) => {
+    const [seriesKey, type] = key.split("::");
+    return type && seriesBy[seriesKey] ? weaponSetup(seriesBy[seriesKey], type, MAX_GRADE) : undefined;
+  };
+  const statsText = (key: string) => {
+    const setup = weaponStats(key);
+    if (!setup) return "";
+    const element = setup.ele ? `　${WEAPON_ELEMENT_NAMES[setup.element as keyof typeof WEAPON_ELEMENT_NAMES] ?? setup.element} ${setup.ele}` : "";
+    return `攻擊 ${setup.atk}${element}　會心 ${setup.crit}%`;
+  };
   const icon = (path?: string) => <span aria-hidden="true" className={cx("block shrink-0 w-5 h-5", BG_ICON)} style={path ? { backgroundImage: `url(${assetPath(path)})` } : undefined} />;
   const holes = (part: SlotId, key: string) => part === "weapon" || !seriesBy[key] ? null : <span title="升滿後的漂流洞數" className="comparison-holes">◇ {seriesBy[key]?.slots?.[part]?.length ?? 0}</span>;
   const nativeSkills = (entries: SeriesSkill[]) => Object.entries(skillsAtGrade(entries, MAX_GRADE)).map(([name, level]) =>
     <span key={name} title={`${level} ${name}`} className={cx("comparison-native-skill block", wanted.includes(name) && "font-bold text-[#087b84]")}><b>{level}</b> {name}</span>);
   return <>
-    <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={() => { setChoosingWeapon(false); onClose(); }} open={visible}
+    <FloatingPicker title={`依技能選裝備 · ${build.name || "未命名"}`} onClose={() => { setChoosing(null); onClose(); }} open={visible}
       clearOnClose={clearOnClose} onClearOnClose={onClearOnClose} onClear={onClear} preferredWidth={1180} preferredHeightRatio={0.95} storageKey="mhnow.skillGear.comparison.window.v3">
       <div className="skill-gear-comparison h-full flex flex-col gap-3">
         <section className="shrink-0 rounded-lg border border-[#dfe2dc] bg-[#f8f9f5] p-2.5">
@@ -1400,13 +1460,16 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
               <span className="flex items-center gap-1.5">{icon(row.item ? icons[row.item.key] : row.icon)}
                 <strong title={row.item ? row.title : "未選裝備"} className="min-w-0 fs-sm text-[#39423a]">{row.item ? row.title : "未選裝備"}</strong>{holes(row.id, row.item?.key ?? "")}
               </span>
+              {row.id === "weapon" && row.item ? <span className="block mt-0.5 fs-sm text-[#5b635c]">{statsText(build.gear.weapon ?? "")}{build.style ? `　✦ ${styleName(build.style)}` : ""}</span> : null}
               {row.item ? <span className="comparison-native-skills block mt-1 fs-sm text-[#687168]">{nativeSkills(row.entries)}</span> : null}
             </button>)}</div>
           </section>
           <section aria-label="各部位候選裝備" className="comparison-candidates-panel min-w-0 flex flex-col rounded-lg border border-[#dfe2dc] bg-white">
             <div ref={candidateList} className="comparison-candidate-list min-h-0 overflow-auto">
               {candidateSlots.map((part) => {
-                const candidates = matches.filter((gear) => gear.slot === part && (part !== "weapon" || !weaponType || gear.key.split("::")[1] === weaponType));
+                const found = matches.filter((gear) => gear.slot === part && (part !== "weapon" || !weaponType || gear.key.split("::")[1] === weaponType));
+                // 技能篩出來的排前面，自己指定的接在後面（技能沒篩到也看得到），再來才是「＋ 指定魔物」。
+                const candidates = [...found, ...(extras[part] ?? []).flatMap((key) => extraGear(part, key)).filter((gear) => !found.some((item) => item.key === gear.key))];
                 return <section key={part} ref={(element) => { candidateGroups.current[part] = element; }} aria-label={`${slotTitle(part)}候選裝備`}
                   className="comparison-candidate-group p-2 border-b border-[#e5e7e2] last:border-b-0">
                   {part === "weapon" ? <div className="comparison-controls flex flex-wrap items-center gap-2 p-2">
@@ -1414,23 +1477,37 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
                     {searchWeapons ? <select aria-label="候選武器種類" value={weaponType} onChange={(event) => setWeaponType(event.target.value)} className="border border-[#d8d0bd] rounded p-1 fs-md">
                       <option value="">全部種類</option>{Object.entries(WEAPON_NAMES).map(([type, name]) => <option key={type} value={type}>{name}</option>)}
                     </select> : null}
-                    <button type="button" onClick={() => setChoosingWeapon(true)} className="ml-auto px-2 py-1 rounded border border-[#bca77e] bg-[#fffaf0] fs-sm text-[#80602d]">更換武器／魔物</button>
+                    {build.gear.weapon ? <>
+                      <span className="fs-sm text-[#5b635c]">{statsText(build.gear.weapon)}</span>
+                      <button type="button" disabled={!equipped[0]?.traits} onClick={() => setShowTraits(true)}
+                        className="px-2 py-1 rounded border border-[#cfd6ce] bg-white fs-sm text-[#39423a] disabled:opacity-40 disabled:cursor-default">武器特性</button>
+                    </> : null}
+                    <button type="button" onClick={() => setChoosing({ slot: "weapon", mode: "replace" })} className="ml-auto px-2 py-1 rounded border border-[#bca77e] bg-[#fffaf0] fs-sm text-[#80602d]">更換武器／魔物</button>
                   </div> : null}
                   {part !== "weapon" || searchWeapons ? <div className="comparison-candidate-group-grid">
                     {!wanted.length ? <p className={cx(NOTE, "col-span-full m-0 py-1")}>{part === "weapon" ? "選擇技能後列出候選，也可直接更換武器。" : `${slotTitle(part)}：請先搜尋或選擇技能。`}</p>
-                      : !candidates.length ? <p className={cx(NOTE, "col-span-full m-0 py-1")}>{slotTitle(part)}沒有符合的裝備。</p> : null}
+                      : !found.length ? <p className={cx(NOTE, "col-span-full m-0 py-1")}>{slotTitle(part)}沒有符合的裝備。</p> : null}
                     {candidates.map((gear) => {
                       const selected = build.gear[part] === gear.key;
+                      const pinned = (extras[part] ?? []).includes(gear.key);
                       return <button key={gear.key} type="button" data-slot={part} aria-pressed={selected} aria-label={`${selected ? "目前裝備" : "替換為"}${gear.title}`}
                         onClick={() => { setSlot(part); if (!selected) onPick(part, gear.key); }}
                         className={cx("comparison-gear-card relative min-w-0 rounded-lg border p-2 text-left", selected ? "border-[#099aa5] bg-[#eaf7f4]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#bca77e]")}>
                         <span className="flex items-center gap-1.5">{icon(icons[gear.key.split("::")[0]])}
                           <strong title={gear.title} className="min-w-0 fs-sm text-[#39423a]">{gear.title}</strong>
+                          {pinned ? <span title="自己指定的候選；在「＋ 指定魔物」裡再點一次可移除" className="shrink-0 rounded px-1 fs-sm text-[#80602d] bg-[#f6ecd8]">指定</span> : null}
                           {selected ? <span aria-hidden="true" className="text-[#087b84] fs-sm">✓</span> : null}{holes(part, gear.key)}
                         </span>
+                        {part === "weapon" ? <span className="block mt-0.5 fs-sm text-[#5b635c]">{statsText(gear.key)}</span> : null}
                         <span className="comparison-native-skills block mt-1 fs-sm text-[#687168]">{nativeSkills(gear.entries)}</span>
                       </button>;
                     })}
+                    <button type="button" data-slot={part} aria-label={`指定${slotTitle(part)}魔物`} title={`指定魔物，把${slotTitle(part)}加進候選`}
+                      onClick={() => { setSlot(part); setChoosing({ slot: part, mode: "add" }); }}
+                      className="comparison-gear-card comparison-pick-monster min-w-0 rounded-lg border border-dashed border-[#bca77e] bg-white p-2 text-left hover:bg-[#fffaf0]">
+                      <span className="flex items-center gap-1.5"><strong className="min-w-0 fs-sm text-[#80602d]">＋ 指定魔物</strong></span>
+                      <span className="comparison-native-skills block mt-1 fs-sm text-[#858d86]">不看技能篩選，把{slotTitle(part)}加進候選</span>
+                    </button>
                   </div> : null}
                 </section>;
               })}
@@ -1458,10 +1535,26 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
         <button onClick={onClose} className="shrink-0 w-full py-2 rounded-lg border-0 bg-[#28352e] text-white fs-md cursor-pointer">完成選擇</button>
       </div>
     </FloatingPicker>
-    {choosingWeapon && visible ? <Modal title="更換武器與魔物" className="skill-selection-dialog" onClose={() => setChoosingWeapon(false)}>
-      <p className="mt-0 mb-3 fs-md text-[#687168]">目前：{equipped[0].title}。重新選擇武器種類與魔物後套用。</p>
-      <div className="recommend-weapon-picker"><WeaponChooser series={series.filter((item) => item.weaponTypes.length > 0)} icons={icons} value=""
-        onPick={(key) => { onPick("weapon", key); setWeaponType(key.split("::")[1] ?? ""); setSlot("weapon"); setChoosingWeapon(false); }} /></div>
+    {choosing && visible ? <Modal monsterSelection onClose={() => setChoosing(null)}
+      title={choosing.mode === "replace" ? "更換武器與魔物" : `指定${slotTitle(choosing.slot)}候選`}>
+      {choosing.mode === "replace" ? <>
+        <p className="mt-0 mb-3 fs-md text-[#687168]">目前：{equipped[0].title}。重新選擇武器種類與魔物後套用。</p>
+        <div className="recommend-weapon-picker"><WeaponChooser series={series.filter((item) => item.weaponTypes.length > 0)} icons={icons} value=""
+          onPick={(key) => { onPick("weapon", key); setWeaponType(key.split("::")[1] ?? ""); setSlot("weapon"); setChoosing(null); }} /></div>
+      </> : choosing.slot === "weapon" ? <>
+        <p className="mt-0 mb-3 fs-md text-[#687168]">選好的武器會加進候選，要換上再點候選卡片。</p>
+        <div className="recommend-weapon-picker"><WeaponChooser series={series.filter((item) => item.weaponTypes.length > 0)} icons={icons} value=""
+          onPick={(key) => { toggleExtra("weapon", key); setSearchWeapons(true); setSlot("weapon"); setChoosing(null); }} /></div>
+      </> : <>
+        <p className="mt-0 mb-3 fs-md text-[#687168]">目前：{equippedTitle(choosing.slot)}。點魔物就把{slotTitle(choosing.slot)}加進候選（已加入的再點一次是移除），要換上再點候選卡片。</p>
+        <div className="recommend-weapon-picker"><MonsterPicker slot={choosing.slot} series={series.filter((item) => item.hasArmor)} value={extras[choosing.slot] ?? []} icons={icons}
+          display={monsterDisplay} onDisplay={setMonsterDisplay} query={monsterQuery} onQuery={setMonsterQuery}
+          onPick={(key) => { toggleExtra(choosing.slot, key); setChoosing(null); }} /></div>
+      </>}
+    </Modal> : null}
+    {showTraits && visible && equipped[0]?.traits ? <Modal title={`${equipped[0].title} · 武器特性`} narrow onClose={() => setShowTraits(false)}>
+      <p className="mt-0 mb-2 fs-md text-[#687168]">{statsText(build.gear.weapon ?? "")}</p>
+      <TraitDetail traits={equipped[0].traits} />
     </Modal> : null}
   </>;
 }
@@ -1627,7 +1720,7 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
           className={cx("rounded border w-[var(--ic-btn)] h-[var(--ic-btn)] flex items-center justify-center fs-sm font-bold cursor-pointer", weaponFilter === type ? "border-[#e0a900] bg-[#fffdf5] shadow-[inset_0_0_0_1px_#e0a900]" : "border-[#e3e6e1] bg-white")}>
           {type ? <span aria-hidden="true" className={cx("block w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(WEAPON_ICON[type])})` }} /> : "全"}</button>)}
       </div> : null}
-      <MonsterPicker series={series.filter((item) => pickerKind === "weapon" ? (weaponFilter ? item.weaponTypes.includes(weaponFilter) : item.weaponTypes.length) : item.hasArmor)} value={monster} onPick={setMonster} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} placeholder="搜尋魔物、裝備、技能或武器特色" />
+      <MonsterPicker series={series.filter((item) => pickerKind === "weapon" ? (weaponFilter ? item.weaponTypes.includes(weaponFilter) : item.weaponTypes.length) : item.hasArmor)} value={monster} onPick={setMonster} icons={ctx.icons} display={display} onDisplay={setDisplay} query={query} onQuery={setQuery} placeholder="搜尋魔物、裝備、技能或武器特色" elements={pickerKind === "weapon"} weaponType={weaponFilter} />
       <div className="grid gap-2 mt-2 sm:grid-cols-2">{candidates.filter((plan) => pickerKind === "weapon" ? plan.slot === "weapon" && (!weaponFilter || plan.weaponType === weaponFilter) : plan.slot !== "weapon").map((plan) => {
         const selected = plans.some((entry) => plannedGearId(entry) === plannedGearId(plan));
         return <button key={plannedGearId(plan)} disabled={selected || !ready} onClick={() => { onChange([...plans, plan]); if (pickerKind === "weapon") setPicker(false); }} className="border border-[#e3dac6] rounded bg-[#fffaf0] p-2 text-left cursor-pointer disabled:opacity-50">
@@ -1678,6 +1771,8 @@ export default function MhnowApp() {
   // 正在選裝備／漂流石的是哪一組的哪一格；展開的裝備列 key 為「組 id:部位」。
   const [editing, setEditing] = useState<{ build: string; slot: SlotId } | null>(null);
   const [driftPick, setDriftPick] = useState<{ build: string; slot: ArmorSlot; index: number } | null>(null);
+  /** 正在選武器風格的配裝 id。 */
+  const [stylePick, setStylePick] = useState<string | null>(null);
   const [pickSeries, setPickSeries] = useState(""); const [pickQuery, setPickQuery] = useState("");
   const [openTiers, setOpenTiers] = useState<Record<string, boolean>>({});
   const [skillTip, setSkillTip] = useState<{ name: string; level: number } | null>(null);
@@ -1835,7 +1930,7 @@ export default function MhnowApp() {
   }
   function pickGear(slot: SlotId, key: string) {
     if (!editing) return;
-    changeBuild(editing.build)((build) => ({ ...build, gear: { ...build.gear, [slot]: key } }));
+    changeBuild(editing.build)((build) => replaceComparisonGear(build, slot, key));
     setEditing(null);
   }
   function addNewBuild() {
@@ -1981,7 +2076,7 @@ export default function MhnowApp() {
         <BuildCard build={build} rows={rowsByBuild[build.id]} ctx={cardContext}
         editingSlot={editing?.build === build.id ? editing.slot : null} open={(slot) => !!openTiers[`${build.id}:${slot}`]} canDelete={builds.builds.length > 1}
         onEdit={(slot) => editSlot(build, slot)} onToggle={(slot) => setOpenTiers((state) => ({ ...state, [`${build.id}:${slot}`]: !state[`${build.id}:${slot}`] }))}
-        onDrift={(slot, position) => setDriftPick({ build: build.id, slot, index: position })} onSkill={(name, level) => setSkillTip({ name, level })}
+        onDrift={(slot, position) => setDriftPick({ build: build.id, slot, index: position })} onStyle={() => setStylePick(build.id)} onSkill={(name, level) => setSkillTip({ name, level })}
         onSkillGear={() => { setSkillGearBuild(build.id); setSkillGearOpen(true); }} onChange={changeBuild(build.id)} onDelete={() => deleteBuild(build)} onShare={() => openShare(build)} /></SortableBuild>)}
 
       <button aria-label="新增配裝" disabled={full} title={full ? `最多 ${MAX_BUILDS} 組` : "新增一組空白配裝"} onClick={addNewBuild}
@@ -1995,6 +2090,7 @@ export default function MhnowApp() {
       {recommendMounted && index && driftstones ? <RecommendPicker key={recommendReset} series={allSeries} stones={driftstones} skillLevels={index.skillLevels} weaponNames={WEAPON_NAMES} full={full}
         icons={icons} gearIcons={{ weapon: WEAPON_ICON, armor: ARMOR_ICON }}
         weaponPicker={(value, onPick) => <div className="recommend-weapon-picker"><WeaponChooser series={weaponSeries} icons={icons} value={value} onPick={onPick} /></div>}
+        weaponTraits={(key) => { const [seriesKey, type] = key.split("::"); const traits = seriesBy[seriesKey]?.traits[type]; return traits ? <TraitSummary traits={traits} /> : null; }}
         onSkill={(name, level) => setSkillTip({ name, level })}
         visible={recommendOpen} clearOnClose={clearOnClose.recommend} onClearOnClose={(recommend) => setClearOnClose((state) => ({ ...state, recommend }))}
         onClear={() => setRecommendReset((count) => count + 1)} onClose={closeRecommend} onSave={(build) => setBuilds((state) => appendBuilds(state, [build]).state)} /> : null}
@@ -2004,14 +2100,14 @@ export default function MhnowApp() {
         visible={skillGearOpen} clearOnClose={clearOnClose.skillGear} onClearOnClose={(skillGear) => setClearOnClose((state) => ({ ...state, skillGear }))}
         onSkill={(name, level) => setSkillTip({ name, level })} onClear={() => setSkillGearReset((count) => count + 1)} onClose={closeSkillGear} onPick={(slot, key) => changeBuild(build.id)((next) => replaceComparisonGear(next, slot, key))} />) : null}
       {discountPickerOpen ? <Modal monsterSelection title={`素材減免（已選 ${discounted.length}）`} onClose={() => setDiscountPickerOpen(false)}>
-        <MonsterPicker series={weaponSeries} value={discounted} onPick={toggleDiscount} icons={icons} display={display} onDisplay={setDisplay} query={discountQuery} onQuery={setDiscountQuery} />
+        <MonsterPicker series={weaponSeries} value={discounted} onPick={toggleDiscount} icons={icons} display={display} onDisplay={setDisplay} query={discountQuery} onQuery={setDiscountQuery} elements />
         <div className="flex gap-2 mt-3">
           <button disabled={!discounted.length} onClick={() => setDiscounted([])} className="py-2 px-3 rounded-lg border border-[#cfc7b4] bg-white fs-md cursor-pointer disabled:opacity-50 disabled:cursor-default">全部清除</button>
           <button onClick={() => setDiscountPickerOpen(false)} className="flex-1 py-2 rounded-lg border-0 bg-[#28352e] text-white fs-md cursor-pointer">完成</button>
         </div>
       </Modal> : null}
       {editing && editingBuild ? <Modal monsterSelection title={editing.slot === "weapon" ? "選擇武器" : `選擇${slotName(editing.slot)}裝備`} onClose={() => setEditing(null)}>
-        <MonsterPicker slot={editing.slot} series={editing.slot === "weapon" ? weaponSeries : armorSeries} value={pickSeries} icons={icons} display={display} onDisplay={setDisplay} query={pickQuery} onQuery={setPickQuery}
+        <MonsterPicker slot={editing.slot} series={editing.slot === "weapon" ? weaponSeries : armorSeries} value={pickSeries} icons={icons} display={display} onDisplay={setDisplay} query={pickQuery} onQuery={setPickQuery} elements={editing.slot === "weapon"}
           onPick={(key) => { setPickSeries(key); if (editing.slot !== "weapon") pickGear(editing.slot, key); }} />
         {editing.slot === "weapon" ? <ChoiceGrid label="② 選擇武器" iconOnly value={editingBuild.gear.weapon ?? ""}
           onPick={(id) => pickGear("weapon", id)}
@@ -2056,7 +2152,7 @@ export default function MhnowApp() {
       </div>
 
       {calcPickerOpen ? <Modal monsterSelection title="選擇對象" onClose={() => setCalcPickerOpen(false)}>
-        <MonsterPicker series={allSeries} value={calcSeries} icons={icons} display={display} onDisplay={setDisplay} query={calcQuery} onQuery={setCalcQuery}
+        <MonsterPicker series={allSeries} value={calcSeries} icons={icons} display={display} onDisplay={setDisplay} query={calcQuery} onQuery={setCalcQuery} elements
           onPick={(key) => { setCalcSeries(key); setCalcKind(""); setCalcQuery(""); setCalcRange({ current: "unforged", target: "" }); }} />
         {searchHits.length ? <ChoiceGrid label="搜尋結果" value={`${calcSeries}::${calcKind}`} items={searchHits}
           onPick={(id) => { const [key, kind] = id.split("::"); selectCalc(key, kind); setCalcQuery(""); setCalcPickerOpen(false); }} /> : null}
@@ -2176,5 +2272,23 @@ export default function MhnowApp() {
           setDriftPick(null);
         }} />
     </Modal> : null}
+    {stylePick ? (() => {
+      const target = builds.builds.find((build) => build.id === stylePick);
+      const type = target?.gear.weapon?.split("::")[1] ?? "";
+      const options = stylesFor(type);
+      const choose = (code: string) => {
+        changeBuild(stylePick)((build) => code ? { ...build, style: code } : { ...build, style: undefined });
+        setStylePick(null);
+      };
+      return <Modal narrow title={`武器風格 · ${weaponTypeName(type)}`} onClose={() => setStylePick(null)}>
+        <p className="mt-0 mb-3 fs-md text-[#687168]">一把武器只能選一個風格。</p>
+        <div className="flex flex-col gap-2">
+          {options.map((code) => <button key={code} onClick={() => choose(code)}
+            className={cx("w-full py-2 px-3 rounded-lg border text-left fs-lg cursor-pointer", target?.style === code ? "border-[#8a6bbf] bg-[#f6f2fc] text-[#4b3b6b]" : "border-[#d8d0bd] bg-white text-[#2b332c] hover:border-[#bca77e]")}>
+            <span aria-hidden="true" className="mr-1.5 text-[#8a6bbf]">{target?.style === code ? "✦" : "✧"}</span>{styleName(code)}</button>)}
+          <button onClick={() => choose("")} className="w-full py-2 px-3 rounded-lg border border-[#d8d0bd] bg-white fs-md text-[#687168] cursor-pointer">不選風格</button>
+        </div>
+      </Modal>;
+    })() : null}
   </main>;
 }

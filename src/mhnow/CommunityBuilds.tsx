@@ -4,10 +4,14 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { assetPath, dataPath } from "./assetPath";
 import type { Build, DriftPick } from "./buildStore";
 import { SkillGroups } from "./SkillGroups";
+import { ElementFilter } from "./ElementFilter";
+import { hasWeaponElement, type ElementSource } from "./weaponElements";
 
 type Entry = {
   /** rank：按讚數排行的名次。time：首次分享的時間（秒），舊資料沒有。 */
   rank: number; likes: number; unlikes: number; shares: number; time?: number; type: string;
+  /** 這把武器選的風格代號（站方資料有附；沒選就沒有這個欄位）。 */
+  style?: string;
   gear: Record<string, string>; drifts: Record<string, string[]>;
 };
 /** rankTotal：站方排行榜總套數（收錄的是其中代碼都對得到的）。 */
@@ -21,7 +25,7 @@ const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boo
 export function communityToBuild(entry: Entry): Build {
   const drifts: Record<string, (DriftPick | null)[]> = {};
   for (const slot of SLOTS) drifts[slot] = (entry.drifts[slot] ?? []).map((skill) => ({ skill, color: "" }));
-  return { id: "", name: `社群 #${entry.rank}`.slice(0, 20), gear: entry.gear, drifts, pieces: {}, showMissing: false };
+  return { id: "", name: `社群 #${entry.rank}`.slice(0, 20), gear: entry.gear, drifts, pieces: {}, showMissing: false, ...(entry.style ? { style: entry.style } : {}) };
 }
 
 /**
@@ -29,7 +33,7 @@ export function communityToBuild(entry: Entry): Build {
  * 資料由 scripts/build-community-builds.mjs 產生。
  */
 export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, renderCard, onAdd, skillsOf, full, modal }: {
-  series: { key: string; name: string }[]; icons: Record<string, string>;
+  series: ({ key: string; name: string } & ElementSource)[]; icons: Record<string, string>;
   /** 武器種類 → 圖示（跟配裝頁同一套）。 */
   weaponIcons: Record<string, string>;
   weaponTypeName: (type: string) => string;
@@ -48,9 +52,12 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
   const [type, setType] = useState("");
   const [monster, setMonster] = useState("");
   const [choosingMonster, setChoosingMonster] = useState(false);
+  /** 選魔物視窗裡的武器屬性篩選（跟配裝頁同一列）。 */
+  const [element, setElement] = useState("");
   const [chosenSkills, setChosenSkills] = useState<string[]>([]);
   const [added, setAdded] = useState<number[]>([]);
-  const [sort, setSort] = useState<"likes" | "new">("likes");
+  // 預設看最新分享的（站方資料本身是按讚數排的，想看熱門再切回「最多人點讚」）。
+  const [sort, setSort] = useState<"likes" | "new">("new");
   const [limit, setLimit] = useState(PAGE_SIZE);
   useEffect(() => {
     fetch(dataPath("/mhnow/community-builds.json")).then((response) => response.json()).then(setData, () => setFailed(true));
@@ -81,7 +88,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
   const matches = activeSkills.length ? ofMonster.filter((entry) => activeSkills.some((name) => skillsOfEntry(entry)[name])) : ofMonster;
   // 魔物圖示：所有有武器配裝的魔物，依全站的魔物順序排。
   const withWeapons = new Set(builds.map(weaponMonster));
-  const monsterKeys = series.map((item) => item.key).filter((key) => withWeapons.has(key));
+  const monsterKeys = series.filter((item) => withWeapons.has(item.key) && (!element || hasWeaponElement(item, element, type || undefined))).map((item) => item.key);
   const types = Object.keys(weaponIcons).filter((option) => builds.some((entry) => entry.type === option));
   // 資料本來就是按讚數排好的；「最新」改依首次分享時間，新的在前，同時間維持按讚順序。
   const sorted = sort === "new" ? [...matches].sort((a, b) => (b.time ?? 0) - (a.time ?? 0)) : matches;
@@ -146,13 +153,17 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
     </section>
     {choosingMonster ? modal("選擇魔物", () => setChoosingMonster(false),
       // 跟其他選魔物的地方一樣：只放小圖示，名稱在滑過時顯示。
+      <>
+      <div className="mb-2 p-2 rounded-lg border border-[#e3dac6] bg-[#fffaf0]"><ElementFilter value={element} onChange={setElement} /></div>
       <div role="group" aria-label="魔物" className="flex flex-wrap gap-1 content-start">
         <button aria-pressed={!monster} title="全部魔物" onClick={() => pickMonster("")} className={cx(tile(!monster), "fs-md font-bold")}>全</button>
         {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = nameOf[key] ?? key; return <button key={key} aria-pressed={monster === key} aria-label={name}
           disabled={!available} title={available ? name : `${name}（沒有${weaponTypeName(type)}的配裝）`} onClick={() => pickMonster(key)}
           className={cx(tile(monster === key), "disabled:opacity-25 disabled:cursor-not-allowed")}>
           {icons[key] ? icon(icons[key], "w-[var(--ic)] h-[var(--ic)]") : <span className="fs-sm font-bold leading-[1.1] px-1.5">{name}</span>}</button>; })}
-      </div>) : null}
+        {monsterKeys.length ? null : <p className="m-0 fs-md text-[#8b938c]">沒有這個屬性的魔物配裝。</p>}
+      </div>
+      </>) : null}
     <div className="flex flex-wrap items-center gap-2">
       <span className="fs-md font-bold text-[#39423a]">排序</span>
       <div role="group" aria-label="排序方式" className="flex rounded-md bg-[#eef0ed] p-0.5">

@@ -8,6 +8,7 @@ import { FloatingPicker } from "./FloatingPicker";
 import { popularSkills } from "./popularSkills";
 import { SkillSelector } from "./SkillSelector";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS } from "./damage";
+import { WEAPON_ELEMENT_COLORS, WEAPON_ELEMENT_NAMES } from "./weaponElements";
 import { isRecommendable, pieceSkills, pieceSlots, recommendBuilds, swapPiece, weaponSetup, weaponSkillsOf, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
 
 type Slot = typeof RECOMMEND_SLOTS[number];
@@ -17,7 +18,9 @@ type Pick = { name: string; level: number; mode: Mode };
 
 const SLOT_NAMES: Record<Slot, string> = { helm: "頭部", mail: "身體", gloves: "手部", belt: "腰部", greaves: "腳部" };
 const MODE_NAMES: Record<Mode, string> = { need: "必備", bonus: "加分", drift: "全鍊成" };
-const ELEMENT_NAMES: Record<string, string> = { fire: "火", water: "水", thunder: "雷", ice: "冰", dragon: "龍", poison: "毒", paralysis: "麻痺", sleep: "睡眠", blast: "爆破" };
+/** 屬性名稱與顏色跟選魔物的屬性篩選共用同一份。 */
+const ELEMENT_NAMES: Record<string, string> = WEAPON_ELEMENT_NAMES;
+const ELEMENT_COLORS: Record<string, string> = WEAPON_ELEMENT_COLORS;
 /** 有發動條件的傷害技能（最大傷害模式讓使用者勾選要不要算）。 */
 const CONDITIONAL = Object.entries(SKILL_EFFECTS).filter(([, setup]) => setup.condition).map(([skill, setup]) => ({ skill, condition: setup.condition! }));
 /** 不配裝技能與傷害條件的設定存在瀏覽器，下次打開沿用；沒存過就用預設。 */
@@ -132,18 +135,20 @@ function Detail({ item, picks, maxLevels, byKey, icons, gearIcons, grade, gradeO
   </div>;
 }
 
-export function RecommendPicker({ series, stones, skillLevels, weaponNames, icons, gearIcons, weaponPicker, full, onSave, onClose, onSkill, visible, clearOnClose, onClearOnClose, onClear }: {
+export function RecommendPicker({ series, stones, skillLevels, weaponNames, icons, gearIcons, weaponPicker, weaponTraits, full, onSave, onClose, onSkill, visible, clearOnClose, onClearOnClose, onClear }: {
   series: RecommendSeries[]; stones: RecommendDrifts; skillLevels: Record<string, string[]>; weaponNames: Record<string, string>;
   icons: Record<string, string>; gearIcons: { weapon: Record<string, string>; armor: Record<string, string> };
   weaponPicker: (value: string, onPick: (weapon: string) => void) => ReactNode;
+  /** 這把武器的特性摘要（彈種、蓄力箭種、瓶、蟲棍…）；由主程式畫，跟配裝卡同一套寫法。 */
+  weaponTraits?: (weapon: string) => ReactNode;
   full: boolean; onSave: (build: Build) => void; onClose: () => void;
   /** 開技能說明（level 是目前等級，0 表示不標示）。 */
   onSkill: (name: string, level: number) => void;
   /** 關閉時只藏起來（條件與結果都留著）；clearOnClose 勾選時由呼叫端卸載清掉。 */
   visible: boolean; clearOnClose: boolean; onClearOnClose: (next: boolean) => void; onClear: () => void;
 }) {
-  // 建議配裝的條件設定比較花時間，點背景不關閉，免得誤觸。
-  const windowProps = { onClose, open: visible, clearOnClose, onClearOnClose, onClear, closeOnBackdrop: false };
+  // 點背景就關（跟其他視窗一樣）；關閉只是藏起來，條件與結果都留著，除非勾了「關閉即清除資料」。
+  const windowProps = { onClose, open: visible, clearOnClose, onClearOnClose, onClear };
   const [weapon, setWeapon] = useState("");
   const [choosingWeapon, setChoosingWeapon] = useState(true);
   // 一律以最高階（G10）的技能、洞數與武器數值計算。
@@ -204,6 +209,11 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const stats = weapon && byKey[weaponKey] ? weaponSetup(byKey[weaponKey], weaponType, grade) : undefined;
   const weaponOwn = weapon ? Object.entries(weaponSkillsOf(byKey[weaponKey], weaponType, grade)) : [];
   const statsText = stats ? `攻擊 ${stats.atk}${stats.ele ? ` · ${ELEMENT_NAMES[stats.element] ?? stats.element} ${stats.ele}` : ""} · 會心 ${stats.crit}%` : "";
+  /** 滑過技能時的說明（點下去仍然開完整說明）。 */
+  const skillText = (name: string, level: number) => {
+    const description = skillLevels[name]?.[Math.max(0, level - 1)];
+    return description ? `${name} Lv${level}：${description}` : `${name} Lv${level}（點擊看說明）`;
+  };
 
   function update(name: string, change: Partial<Pick>) {
     setPicks((current) => current.map((pick) => pick.name === name ? { ...pick, ...change } : pick));
@@ -313,16 +323,20 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
           <div className={SECTION_HEAD}>
             <span className="flex items-center gap-2 min-w-0">{weapon ? <><Icon src={gearIcons.weapon[weaponType]} size={IC} /><Icon src={weaponIcons[weaponKey]} size={IC} fallback={byKey[weaponKey]?.name} /></> : null}
               <span className={weapon ? "truncate" : "min-w-0"}>{weapon ? weaponTitle : "① 武器"}</span></span>
+            {weapon ? <span className="min-w-0 flex-1 font-normal text-[#6d756e]">{weaponTraits?.(weapon)}</span> : null}
             {weapon ? <button className={SMALL_BUTTON} onClick={() => setChoosingWeapon(!choosingWeapon)}>{choosingWeapon ? "收合" : "更換"}</button> : null}
           </div>
           {choosingWeapon || !weapon ? <div className="p-2">{weaponPicker(weapon, (next) => { setWeapon(next); setChoosingWeapon(false); })}</div> : null}
-          {weapon ? <div className="px-3 pb-2.5">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {stats ? <span className="fs-md text-[#39423a]">會心 {stats.crit}%</span> : null}
-              <span className="fs-md text-[#687168]">武器技能</span>
-              {weaponOwn.length ? weaponOwn.map(([name, level]) => <button key={name} onClick={() => onSkill(name, level)}
-                className="px-2.5 py-1 rounded-full border border-[#e0a900] bg-[#fffdf5] fs-lg text-[#2b332c] cursor-pointer">{name} <b className="text-[#e08a00]">Lv{level}</b></button>)
-                : <span className="fs-md text-[#858d86]">無</span>}</div>
+          {/* 武器數值（升滿）與武器自己的技能排同一行，放不下才換行。 */}
+          {weapon ? <div className="px-3 pb-2.5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            {stats ? <>
+              <span className="fs-md text-[#687168]">攻擊 <b className="fs-lg text-[#2b332c]">{stats.atk}</b></span>
+              {stats.ele ? <span className="fs-md text-[#687168]">{ELEMENT_NAMES[stats.element] ?? stats.element}
+                <b className="fs-lg" style={{ color: ELEMENT_COLORS[stats.element] ?? "#2b332c" }}> {stats.ele}</b></span> : null}
+              <span className="fs-md text-[#687168]">會心 <b className={cx("fs-lg", stats.crit < 0 ? "text-[#b23a30]" : "text-[#2b332c]")}>{stats.crit}%</b></span>
+            </> : null}
+            {weaponOwn.map(([name, level]) => <button key={name} onClick={() => onSkill(name, level)} title={skillText(name, level)}
+              className="p-0 border-0 bg-transparent fs-md text-[#2b332c] underline decoration-dotted underline-offset-2 cursor-pointer">{name} <b className="text-[#e08a00]">Lv{level}</b></button>)}
           </div> : null}
         </section>
 

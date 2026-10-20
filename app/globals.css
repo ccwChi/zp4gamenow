@@ -9,7 +9,8 @@
 /* 放在 base layer，utility class 才蓋得過（沒分層的樣式在 CSS layers 裡優先權最高）。 */
 @layer base {
   *{box-sizing:border-box}
-  :root{color-scheme:light;--app-scale:.9;zoom:var(--app-scale)}
+  /* 全站縮放：.72 等於原本的 .9 再把瀏覽器縮到 80%，也就是實際用起來剛好的大小。 */
+  :root{color-scheme:light;--app-scale:.72;zoom:var(--app-scale)}
   body{margin:0;font-family:Arial,"Microsoft JhengHei",sans-serif}
   button,a,input{-webkit-tap-highlight-color:transparent}
   button{font:inherit;cursor:pointer}
@@ -40,16 +41,19 @@
    配裝主畫面的圖示是另外的大小，不受影響。 */
 :root{--ic:40px;--ic-btn:50px;--ic-slot:30px}
 
-/* 桌面魔物選擇視窗額外放大 125%，善用螢幕寬高；只有內容超過可用高度才捲動。 */
+/* 對話框在畫面上最寬就是視窗的 75%，而且不超過 1000px。
+   根元素有 zoom，版面座標要先除回去，算出來才是畫面上的實際寬度；視窗本身另有 zoom 的再除一次。
+   手機（620px 以下）不套用，寬度照原本的 Tailwind 設定佔滿。 */
+:root{--modal-max:calc(min(75vw,1000px) / var(--app-scale))}
 @media (min-width:621px){
-  .monster-selection-dialog,.desktop-monster-picker-content{zoom:1.25}
-  .monster-selection-dialog{
-    width:calc((100vw - 48px) / (var(--app-scale) * 1.25));
-    max-width:1160px;
-    max-height:calc((100dvh - 48px) / (var(--app-scale) * 1.25));
-  }
-  .monster-selection-dialog .monster-picker-options,
-  .desktop-monster-picker-content .monster-picker-options{height:auto;max-height:none;overflow:visible}
+  .app-modal{max-width:min(760px,var(--modal-max))}
+  .app-modal-narrow{max-width:min(360px,var(--modal-max))}
+}
+
+/* 選魔物的視窗：寬度跟其他對話框一樣（太寬的話一列會排到二十隻，反而難找），
+   只有高度放寬，魔物很多就整個視窗捲動，不另外內捲。 */
+@media (min-width:621px){
+  .monster-selection-dialog{max-height:calc((100dvh - 48px) / var(--app-scale))}
 }
 
 /* 依技能比較裝備：隨浮動視窗的實際寬度排列，小視窗先呈現總技能，再看候選。 */
@@ -72,17 +76,17 @@
 .comparison-gear-card[data-slot="weapon"]{min-height:0;height:auto}
 .comparison-gear-card[data-slot="weapon"] .comparison-native-skills{min-height:0}
 .comparison-native-skill{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 指定魔物的虛線卡：說明文字不要撐出固定高度的卡片。 */
+.comparison-pick-monster .comparison-native-skills{overflow:hidden}
 .comparison-selected-skills{max-width:45%}
 .comparison-gear-card .fs-sm{font-size:var(--fs-md);line-height:1.35}
 .comparison-gear-card>span:last-of-type{line-height:1.35}
 .comparison-holes{display:inline-block;flex-shrink:0;margin-left:auto;padding:2px 4px;border-radius:4px;background:#eee9f2;font-size:max(12px,var(--fs-sm));font-weight:600;color:#706080;white-space:nowrap;line-height:1.2}
 .comparison-summary-panel button.fs-sm{font-size:var(--fs-md)}
-/* 建議配裝的選武器區保持緊湊：武器與魔物各自使用適合辨識的尺寸。 */
-.recommend-weapon-picker{--ic:40px;--ic-btn:50px}
+/* 選武器的地方：武器種類的圖示比魔物小一號，魔物維持全站統一的大小。 */
 .recommend-weapon-picker .weapon-type-options{--ic:34px;--ic-btn:44px}
-.recommend-weapon-picker .monster-picker-options{height:auto;max-height:none;overflow:visible}
 @media (min-width:621px){
-  .skill-selection-dialog{max-width:760px;max-height:min(600px,calc((100dvh - 96px) / var(--app-scale)))}
+  .skill-selection-dialog{max-width:min(760px,var(--modal-max));max-height:min(600px,calc((100dvh - 96px) / var(--app-scale)))}
 }
 @container (min-width:900px){
   .gear-comparison-layout{display:grid;grid-template-columns:205px minmax(0,1fr) 250px;grid-template-rows:max-content repeat(5,calc(var(--comparison-card-height) + var(--comparison-scrollbar-height))) minmax(0,1fr);gap:0 8px;overflow:auto;align-content:start}

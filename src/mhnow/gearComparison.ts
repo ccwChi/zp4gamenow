@@ -1,5 +1,6 @@
 import type { Build } from "./buildStore";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
+import { styleFits } from "./weaponStyles";
 
 type SkillSource = {
   key: string; skills: Record<string, SeriesSkill[]>; weaponSkills?: Record<string, SeriesSkill[]>;
@@ -31,7 +32,11 @@ export function equipmentSkillTotals(build: Build, series: SkillSource[]): Recor
 
 /** Preview and selection use the same replacement rule; clicking equipped gear never removes it. */
 export function replaceComparisonGear(build: Build, slot: string, key: string): Build {
-  return build.gear[slot] === key ? build : { ...build, gear: { ...build.gear, [slot]: key } };
+  if (build.gear[slot] === key) return build;
+  const next = { ...build, gear: { ...build.gear, [slot]: key } };
+  // 換成別種武器時，原本的風格就不屬於這把武器了。
+  if (slot === "weapon" && next.style && !styleFits(key.split("::")[1] ?? "", next.style)) delete next.style;
+  return next;
 }
 
 export function compareSkillTotals(before: Record<string, number>, after: Record<string, number>, selected: string[] = []) {

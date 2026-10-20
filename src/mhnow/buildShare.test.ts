@@ -46,3 +46,12 @@ it("rejects text without a code, damaged codes and builds with no gear", () => {
   expect(decodeBuildShare(encodeBuildShare(build).slice(0, 20))).toHaveProperty("error");
   expect(decodeBuildShare(encodeBuildShare({ ...build, gear: {}, drifts: {} }))).toHaveProperty("error");
 });
+
+it("carries the weapon style, and leaves it out when none is chosen", () => {
+  const styled = decodeBuildShare(encodeBuildShare({ ...build, style: "sacred_sheath" }));
+  expect("build" in styled && styled.build.style).toBe("sacred_sheath");
+  const plain = decodeBuildShare(encodeBuildShare(build));
+  expect("build" in plain && plain.build.style).toBeUndefined();
+  // 沒選風格就不寫進分享碼，碼不會變長。
+  expect(encodeBuildShare(build).length).toBeLessThan(encodeBuildShare({ ...build, style: "sacred_sheath" }).length);
+});

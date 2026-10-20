@@ -23,6 +23,8 @@ export type DriftPick = { skill: string; color: string };
 export type Build = {
   id: string; name: string; gear: Record<string, string>; drifts: Record<string, (DriftPick | null)[]>;
   pieces: Record<string, Piece>; showMissing: boolean;
+  /** 武器選的風格（weaponStyles 的代號）；沒選就沒有這個欄位。 */
+  style?: string;
 };
 /**
  * 目前階級是「每件裝備」共用的：同一件裝備（部位＋系列）在每組配裝都是同一個階級，漂流石則各配裝自己鑲。
@@ -225,7 +227,8 @@ export function parseBuild(value: unknown): Build | null {
       pieces[slot] = { item: piece.item, current: piece.current, target: piece.target };
     }
   }
-  return { id: value.id, name: value.name.slice(0, MAX_NAME), gear, drifts, pieces, showMissing: value.showMissing === true };
+  const style = typeof value.style === "string" && value.style ? { style: value.style } : {};
+  return { id: value.id, name: value.name.slice(0, MAX_NAME), gear, drifts, pieces, showMissing: value.showMissing === true, ...style };
 }
 
 /** 讀存檔：格式不對、是空的或讀不到，一律回到預設的一組空白配裝。 */

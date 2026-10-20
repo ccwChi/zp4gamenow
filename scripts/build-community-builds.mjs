@@ -125,6 +125,8 @@ let skipped = 0;
 for (const entry of rank.data) {
   const [typeCode, ...rest] = entry.data;
   const type = WEAPON_TYPES[typeCode], drifted = rest[6];
+  // rest[7] 是這把武器選的風格代號（"none" 表示沒選；舊資料可能沒有這格，或放的是別的東西）。
+  const style = typeof rest[7] === "string" && rest[7] !== "none" ? rest[7] : undefined;
   const keys = rest.slice(0, 6).map((code) => keyByCode[code]);
   const holes = SLOTS.map(([src]) => (drifted?.[src] ?? []).map((code) => nameByCode[code]));
   const weaponSeries = seriesOf[keys[0]];
@@ -132,7 +134,7 @@ for (const entry of rank.data) {
     || keys.slice(1).some((key) => !seriesOf[key].hasArmor)) { skipped++; continue; }
   const gear = { weapon: `${keys[0]}::${type}` }, drifts = {};
   SLOTS.forEach(([, slot], position) => { gear[slot] = keys[position + 1]; drifts[slot] = holes[position]; });
-  builds.push({ likes: entry.likes, unlikes: entry.unlikes, shares: entry.count, time: entry.first_time, type, gear, drifts });
+  builds.push({ likes: entry.likes, unlikes: entry.unlikes, shares: entry.count, time: entry.first_time, type, gear, drifts, ...(style ? { style } : {}) });
 }
 // 站方的 score 欄位不是按讚數（跟 Top 100 的分數也對不上）。預設排序＝按讚數多到少（rank 就是這個名次），
 // 畫面上另外可以切成依 time（首次分享的時間，秒）排的「最新」。

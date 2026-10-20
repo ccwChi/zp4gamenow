@@ -9,9 +9,9 @@ export const MATERIAL_DISCOUNT_KEY = "mhnow.materialDiscount.v1";
  * 使用者存的是舊活動的勾選，就會回到這份新預設；同一個活動內使用者自己的增減會保留。
  */
 export const DEFAULT_MATERIAL_DISCOUNT = {
-  event: "2026-10",
-  // 蒼火龍、火龍、泡狐龍、恐暴龍、怨虎龍、雷狼龍、傘鳥
-  monsters: ["a-ratha", "ratha", "mizu", "devi", "magn", "zino", "akno"],
+  event: "2026-10-20",
+  // 黑角龍
+  monsters: ["b-diab"],
 };
 
 export type MaterialDiscount = { event: string; monsters: string[] };
