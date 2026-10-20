@@ -2,8 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-export function SkillAutocomplete({ names, selected, onSelect, label = "搜尋技能" }: {
+/** hint：選單裡每個項目右邊的小字（例如「魔物」「技能」），用來同時搜兩種東西。 */
+export function SkillAutocomplete({ names, selected, onSelect, label = "搜尋技能", placeholder = "搜尋並選擇技能", empty = "沒有符合的未選技能。", hint }: {
   names: string[]; selected: string[]; onSelect: (name: string) => void; label?: string;
+  placeholder?: string; empty?: string; hint?: (name: string) => string | undefined;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -21,7 +23,7 @@ export function SkillAutocomplete({ names, selected, onSelect, label = "搜尋�
   return <div className="relative min-w-0 flex-1">
     <input role="combobox" aria-label={label} aria-autocomplete="list" aria-expanded={expanded} aria-controls={listId}
       aria-activedescendant={expanded && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-      autoComplete="off" value={query} placeholder="搜尋並選擇技能"
+      autoComplete="off" value={query} placeholder={placeholder}
       onFocus={() => setOpen(true)} onBlur={() => { setOpen(false); setActive(-1); }}
       onChange={(event) => { setQuery(event.target.value); setActive(-1); setOpen(true); }}
       onKeyDown={(event) => {
@@ -39,8 +41,9 @@ export function SkillAutocomplete({ names, selected, onSelect, label = "搜尋�
       className="absolute top-full left-0 right-0 z-30 mt-1 max-h-[240px] overflow-auto rounded-lg border border-[#d8d0bd] bg-white shadow-lg py-1">
       {options.map((name, index) => <button key={name} type="button" role="option" id={`${listId}-${index}`} aria-selected={activeIndex === index} tabIndex={-1}
         onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => select(name)}
-        className={`block w-full px-3 py-2 border-0 text-left fs-md ${activeIndex === index ? "bg-[#eaf7f4] text-[#087b84]" : "bg-white text-[#39423a] hover:bg-[#f5f7f3]"}`}>{name}</button>)}
-      {!options.length ? <p role="status" className="m-0 px-3 py-2 fs-md text-[#858d86]">沒有符合的未選技能。</p> : null}
+        className={`flex w-full items-baseline gap-2 px-3 py-2 border-0 text-left fs-md ${activeIndex === index ? "bg-[#eaf7f4] text-[#087b84]" : "bg-white text-[#39423a] hover:bg-[#f5f7f3]"}`}>
+        <span className="min-w-0 flex-1 truncate">{name}</span>{hint?.(name) ? <small className="shrink-0 text-[#858d86]">{hint(name)}</small> : null}</button>)}
+      {!options.length ? <p role="status" className="m-0 px-3 py-2 fs-md text-[#858d86]">{empty}</p> : null}
     </div> : null}
   </div>;
 }

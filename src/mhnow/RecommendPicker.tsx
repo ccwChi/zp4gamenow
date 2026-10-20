@@ -7,6 +7,7 @@ import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
 import { popularSkills } from "./popularSkills";
 import { SkillSelector } from "./SkillSelector";
+import { SkillAutocomplete } from "./SkillAutocomplete";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS } from "./damage";
 import { WEAPON_ELEMENT_COLORS, WEAPON_ELEMENT_NAMES } from "./weaponElements";
 import { isRecommendable, pieceSkills, pieceSlots, recommendBuilds, swapPiece, weaponSetup, weaponSkillsOf, RECOMMEND_SLOTS, type Recommendation, type RecommendSeries, type RecommendDrifts } from "./recommendBuilds";
@@ -157,9 +158,9 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const [fixed, setFixed] = useState<Partial<Record<Slot, { key: string; grade: number }>>>({});
   const unfix = (slot: Slot) => setFixed((current) => { const next = { ...current }; delete next[slot]; return next; });
   /** 展開中的部位（可以同時開好幾個，條件是五件共用的）。 */
-  const [fixing, setFixing] = useState<Slot[]>([]);
   const [fixOpen, setFixOpen] = useState(true);
-  const [fixQuery, setFixQuery] = useState("");
+  /** 指定部位的條件（五件共用）：挑過的魔物，選完變成一顆可以取消的標籤。 */
+  const [candMonsters, setCandMonsters] = useState<string[]>([]);
   /** 換裝時只看有這些技能的裝備；沒選就用上面「② 技能」選的那些。 */
   const [candSkills, setCandSkills] = useState<string[]>([]);
   const [onlyHit, setOnlyHit] = useState(true);
@@ -239,19 +240,21 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
     return Object.entries(goalLevels).reduce((sum, [name, level]) => sum + Math.min(skills[name] ?? 0, level), 0);
   };
   const hasExcluded = (key: string, slot: Slot) => Object.keys(pieceSkills(byKey[key], slot, 10)).some((name) => excluded.includes(name));
-  /** 候選裝備：搜尋字比對魔物名或技能名；有目標技能時預設只留有貢獻的，依貢獻排序。 */
   /** 防具每個部位最多幾洞（決定顯示哪幾顆洞數篩選鈕）。 */
   const maxHoles = useMemo(() => Math.max(0, ...series.flatMap((item) => RECOMMEND_SLOTS.map((slot) => item.slots?.[slot]?.length ?? 0))), [series]);
+  /** 有防具的魔物名稱（搜尋框用；名稱跟技能不會重複，所以同一個框可以兩種一起搜）。 */
+  const monsterNames = useMemo(() => series.filter((item) => item.hasArmor).map((item) => item.name).sort((a, b) => a.localeCompare(b, "zh-Hant")), [series]);
+  const monsterTags = candMonsters.map((key) => ({ key, name: byKey[key]?.name ?? key }));
   /** 有沒有下任何條件：全部防具列出來太長，先縮到用魔物／技能／洞數挑過的。 */
-  const fixFiltered = !!fixQuery.trim() || candSkills.length > 0 || minHoles > 0 || (goalCount > 0 && onlyHit);
+  const fixFiltered = candMonsters.length > 0 || candSkills.length > 0 || minHoles > 0 || (goalCount > 0 && onlyHit);
+  /** 候選裝備：挑過的魔物、技能、洞數都要符合；有目標技能時預設只留有貢獻的，依貢獻排序。 */
   const pieceCandidates = (slot: Slot) => {
-    const text = fixQuery.trim().toLowerCase();
     if (!fixFiltered) return [];
     return series.filter((item) => item.hasArmor && (item.skills[slot] !== undefined || item.slots?.[slot] !== undefined)
-      && (!text || item.name.toLowerCase().includes(text) || Object.keys(pieceSkills(item, slot, 10)).some((name) => name.toLowerCase().includes(text)))
+      && (!candMonsters.length || candMonsters.includes(item.key))
       && (!minHoles || pieceSlots(item, slot, 10) >= minHoles)
       && (!candSkills.length || Object.keys(pieceSkills(item, slot, 10)).some((name) => candSkills.includes(name)))
-      && (!goalCount || !onlyHit || text || minHoles || candSkills.length || gainOf(item.key, slot, 10) > 0))
+      && (!goalCount || !onlyHit || candMonsters.length || minHoles || candSkills.length || gainOf(item.key, slot, 10) > 0))
       .sort((a, b) => gainOf(b.key, slot, 10) - gainOf(a.key, slot, 10)
         || pieceSlots(b, slot, 10) - pieceSlots(a, slot, 10) || a.name.localeCompare(b.name, "zh-Hant"));
   };
@@ -377,24 +380,31 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
           </div>
         </section>
 
-        {/* ③ 指定部位：搜尋與篩選條件五件共用（放在標題列），各部位可以同時展開、分別挑，點了就指定。 */}
+        {/* ③ 指定部位：搜尋條件五件共用（魔物與技能都選成標籤），五個部位的候選一次橫向列出，點了就指定。 */}
         <section className={SECTION}>
           <div className={SECTION_HEAD}><span className="shrink-0">③ 指定部位{Object.keys(fixed).length ? `（${Object.keys(fixed).length}）` : ""}</span>
-            {fixOpen ? <input aria-label="搜尋裝備" value={fixQuery} onChange={(event) => setFixQuery(event.target.value)} placeholder="搜尋魔物或技能名稱"
-              className="flex-1 min-w-0 py-1 px-2 border border-[#dfe2dc] rounded-md bg-white fs-md font-normal outline-none" /> : null}
+            {fixOpen ? <span className="min-w-0 flex-1 flex items-center gap-1.5 font-normal">
+              <SkillAutocomplete names={[...monsterNames, ...skillNames]} selected={[...monsterTags.map((tag) => tag.name), ...candSkills]} label="搜尋魔物或技能"
+                placeholder="搜尋並選擇魔物或技能" empty="沒有符合的魔物或技能。" hint={(name) => monsterNames.includes(name) ? "魔物" : "技能"}
+                onSelect={(name) => {
+                  const monster = series.find((item) => item.hasArmor && item.name === name);
+                  if (monster) setCandMonsters((current) => current.includes(monster.key) ? current : [...current, monster.key]);
+                  else setCandSkills((current) => current.includes(name) ? current : [...current, name]);
+                }} />
+              {monsterTags.length || candSkills.length ? <span className="flex min-w-0 items-center gap-1 overflow-x-auto">
+                {monsterTags.map((tag) => <button key={tag.key} type="button" aria-label={`取消${tag.name}`} onClick={() => setCandMonsters(candMonsters.filter((key) => key !== tag.key))}
+                  className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full border border-[#e3cfa3] bg-[#fffaf0] fs-md text-[#80602d]">{tag.name} ×</button>)}
+                {candSkills.map((name) => <button key={name} type="button" aria-label={`取消${name}`} onClick={() => setCandSkills(candSkills.filter((skill) => skill !== name))}
+                  className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full border border-[#bfe1de] bg-[#eef8f7] fs-md text-[#087b84]">{name} ×</button>)}
+                <button type="button" onClick={() => { setCandMonsters([]); setCandSkills([]); }} className="shrink-0 whitespace-nowrap border-0 bg-transparent fs-md text-[#099aa5] cursor-pointer">清除篩選</button>
+              </span> : null}
+            </span> : null}
             <span className="flex items-center gap-3 shrink-0">
-              {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixed({}); setFixing([]); }}>清除</button> : null}
-              <button aria-expanded={fixOpen} className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixOpen(!fixOpen); setFixing([]); }}>{fixOpen ? "收合" : "展開"} {fixOpen ? "▴" : "▾"}</button>
+              {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => setFixed({})}>清除指定</button> : null}
+              <button aria-expanded={fixOpen} className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => setFixOpen(!fixOpen)}>{fixOpen ? "收合" : "展開"} {fixOpen ? "▴" : "▾"}</button>
             </span></div>
           {fixOpen || Object.keys(fixed).length ? <div className="p-2 space-y-1.5">
             {fixOpen ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5">
-              <span className="flex flex-wrap items-center gap-1">
-                <span className="fs-sm text-[#858d86]">依技能：</span>
-                {[...new Set([...picks.map((pick) => pick.name), ...candSkills])].map((name) => { const on = candSkills.includes(name);
-                  return <button key={name} aria-pressed={on} onClick={() => setCandSkills(on ? candSkills.filter((skill) => skill !== name) : [...candSkills, name])}
-                    className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; })}
-                {candSkills.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setCandSkills([])}>清除</button> : null}
-              </span>
               <span className="flex flex-wrap items-center gap-1">
                 <span className="fs-sm text-[#858d86]">洞數：</span>
                 {Array.from({ length: maxHoles }, (_, index) => index + 1).map((count) => { const on = minHoles === count;
@@ -408,50 +418,41 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
               const lock = fixed[slot];
               if (!fixOpen && !lock) return null;
               const item = lock ? byKey[lock.key] : undefined;
-              const open = fixing.includes(slot);
-              const toggleFixing = () => setFixing(open ? fixing.filter((other) => other !== slot) : [...fixing, slot]);
+              const all = pieceCandidates(slot);
               return <div key={slot} className="rounded-md bg-[#fbfaf6] border border-[#eee6d4]">
                 <div className="flex items-center gap-2 p-1.5">
                   <Icon src={gearIcons.armor[slot]} size={IC_SLOT} />
                   <span className="w-8 shrink-0 fs-md font-bold">{SLOT_NAMES[slot]}</span>
                   {lock && item ? <>
                     <Icon src={icons[lock.key]} size={IC} fallback={item.name} />
-                    <span className="flex-1 min-w-0 truncate fs-lg font-bold">{item.name}</span>
-                    <button className={SMALL_BUTTON} aria-expanded={open} onClick={toggleFixing}>{open ? "收合" : "換"}</button>
+                    <span className="min-w-0 truncate fs-lg font-bold">{item.name}</span>
+                    <span className="flex-1 min-w-0 truncate fs-md text-[#5b635c]">{skillSpans(lock.key, slot, lock.grade)}　{pieceSlots(item, slot, lock.grade) ? `洞 ${pieceSlots(item, slot, lock.grade)}` : "沒有洞"}</span>
                     <button aria-label={`取消指定${SLOT_NAMES[slot]}`} onClick={() => unfix(slot)} className="w-6 h-6 shrink-0 border-0 bg-transparent text-[#8b938c] cursor-pointer">✕</button>
-                  </> : <>
-                    <span className="flex-1 fs-md text-[#858d86]">自動搭配</span>
-                    <button className={SMALL_BUTTON} aria-expanded={open} onClick={toggleFixing}>{open ? "收合" : "指定"}</button>
-                  </>}
+                  </> : <span className="flex-1 fs-md text-[#858d86]">自動搭配</span>}
                 </div>
-                {lock && item ? <p className="m-0 px-2 pb-1.5 fs-md text-[#5b635c]">{skillSpans(lock.key, slot, lock.grade)}　{pieceSlots(item, slot, lock.grade) ? `洞 ${pieceSlots(item, slot, lock.grade)}` : "沒有洞（不能鍊成）"}</p> : null}
-                {open ? <div className="px-1.5 pb-1.5">
-                  {(() => {
-                    const all = pieceCandidates(slot);
-                    const current = lock ? { gain: gainOf(lock.key, slot, lock.grade), holes: pieceSlots(byKey[lock.key], slot, lock.grade) } : null;
-                    const same = current ? all.filter((candidate) => candidate.key !== lock!.key && gainOf(candidate.key, slot, Math.max(lock!.grade, candidate.unlock ?? 1)) === current.gain
-                      && pieceSlots(candidate, slot, Math.max(lock!.grade, candidate.unlock ?? 1)) === current.holes) : [];
-                    const row = (candidate: RecommendSeries) => {
-                      const bad = hasExcluded(candidate.key, slot), gain = gainOf(candidate.key, slot, 10), selected = lock?.key === candidate.key;
-                      // 點一下就指定（面板不關，接著可以挑其他部位）；再點同一件就取消指定。
-                      return <button key={candidate.key} disabled={bad} aria-pressed={selected} onClick={() => {
-                        if (selected) { unfix(slot); return; }
-                        setFixed({ ...fixed, [slot]: { key: candidate.key, grade: Math.max(grade, candidate.unlock ?? 1) } });
-                      }} className={cx("w-full flex items-center gap-2 p-1.5 rounded-md border text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed", selected ? "border-[#e0a900] bg-[#fffdf5]" : "border-[#e3dac6] bg-white hover:border-[#099aa5]")}>
-                        <Icon src={icons[candidate.key]} size={IC} fallback={candidate.name} />
-                        <span className="flex-1 min-w-0"><b className="block fs-md">{candidate.name}{selected ? <small className="ml-1.5 font-normal text-[#b07d00]">已指定</small> : null}{bad ? <small className="ml-1.5 font-normal text-[#b23a30]">含不配裝技能</small> : null}</b>
-                          <span className="block fs-md text-[#5b635c]">{skillSpans(candidate.key, slot, 10)}　{pieceSlots(candidate, slot, 10) ? `洞 ${pieceSlots(candidate, slot, 10)}` : "沒有洞"}（G10）</span></span>
+                {fixOpen ? <div className="px-1.5 pb-1.5">
+                  {/* 候選橫向排列，五個部位同時看得到；一列放不下就左右捲。 */}
+                  {all.length ? <div className="flex gap-1 overflow-x-auto pb-1">{all.map((candidate) => {
+                    const bad = hasExcluded(candidate.key, slot), gain = gainOf(candidate.key, slot, 10), selected = lock?.key === candidate.key;
+                    // 點一下就指定，再點同一件取消；清單不會收起來，接著可以挑其他部位。
+                    return <button key={candidate.key} disabled={bad} aria-pressed={selected} onClick={() => {
+                      if (selected) { unfix(slot); return; }
+                      setFixed({ ...fixed, [slot]: { key: candidate.key, grade: Math.max(grade, candidate.unlock ?? 1) } });
+                    }} className={cx("w-[168px] shrink-0 flex flex-col gap-0.5 p-1.5 rounded-md border text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
+                      selected ? "border-[#e0a900] bg-[#fffdf5]" : "border-[#e3dac6] bg-white hover:border-[#099aa5]")}>
+                      <span className="flex items-center gap-1.5">
+                        <Icon src={icons[candidate.key]} size={IC_SLOT} fallback={candidate.name} />
+                        <b className="min-w-0 flex-1 truncate fs-md">{candidate.name}</b>
                         {goalCount ? <b className="shrink-0 fs-md text-[#e08a00]">+{gain}</b> : null}
-                      </button>;
-                    };
-                    return <div className="max-h-[260px] overflow-auto space-y-1">
-                      {same.length ? <><p className={cx(NOTE, "m-0")}><b>可換</b></p>{same.map(row)}<p className={cx(NOTE, "m-0 pt-1")}><b>其他</b></p></> : null}
-                      {all.filter((candidate) => !same.includes(candidate)).map(row)}
-                      {!all.length ? <p className={NOTE}>{fixFiltered
-                        ? `找不到符合的裝備。${goalCount && onlyHit ? "可以取消「只看有貢獻的」。" : ""}`
-                        : "上面搜尋魔物或技能名稱，或選技能、洞數，就會列出候選。"}</p> : null}
-                    </div>;
-                  })()}
+                      </span>
+                      <span className="block fs-sm text-[#5b635c]">{skillSpans(candidate.key, slot, 10)}</span>
+                      <span className="block fs-sm text-[#858d86]">{pieceSlots(candidate, slot, 10) ? `洞 ${pieceSlots(candidate, slot, 10)}` : "沒有洞"}
+                        {selected ? <em className="not-italic ml-1.5 text-[#b07d00]">已指定</em> : null}{bad ? <em className="not-italic ml-1.5 text-[#b23a30]">含不配裝技能</em> : null}</span>
+                    </button>;
+                  })}</div>
+                    : <p className={cx(NOTE, "m-0")}>{fixFiltered
+                      ? `找不到符合的${SLOT_NAMES[slot]}。${goalCount && onlyHit ? "可以取消「只看有貢獻的」。" : ""}`
+                      : "上面搜尋並選擇魔物或技能，或選洞數，就會列出候選。"}</p>}
                 </div> : null}
               </div>;
             })}
