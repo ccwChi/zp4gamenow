@@ -9,8 +9,10 @@
 /* 放在 base layer，utility class 才蓋得過（沒分層的樣式在 CSS layers 裡優先權最高）。 */
 @layer base {
   *{box-sizing:border-box}
-  /* 全站縮放：.72 等於原本的 .9 再把瀏覽器縮到 80%，也就是實際用起來剛好的大小。 */
-  :root{color-scheme:light;--app-scale:.72;zoom:var(--app-scale)}
+  /* 全站縮放。手機（620px 以下）本來就另有一組小一號的字級，再縮會看不清楚，維持 .9；
+     桌機用 .72（等於原本的 .9 再把瀏覽器縮到 80%），才是實際用起來剛好的大小。 */
+  :root{color-scheme:light;--app-scale:.9;zoom:var(--app-scale)}
+  @media (min-width:621px){ :root{--app-scale:.72} }
   body{margin:0;font-family:Arial,"Microsoft JhengHei",sans-serif}
   button,a,input{-webkit-tap-highlight-color:transparent}
   button{font:inherit;cursor:pointer}
