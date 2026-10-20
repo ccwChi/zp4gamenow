@@ -155,7 +155,9 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   const grade = 10;
   const [picks, setPicks] = useState<Pick[]>([]);
   const [fixed, setFixed] = useState<Partial<Record<Slot, { key: string; grade: number }>>>({});
-  const [fixing, setFixing] = useState<Slot | null>(null);
+  const unfix = (slot: Slot) => setFixed((current) => { const next = { ...current }; delete next[slot]; return next; });
+  /** 展開中的部位（可以同時開好幾個，條件是五件共用的）。 */
+  const [fixing, setFixing] = useState<Slot[]>([]);
   const [fixOpen, setFixOpen] = useState(true);
   const [fixQuery, setFixQuery] = useState("");
   /** 換裝時只看有這些技能的裝備；沒選就用上面「② 技能」選的那些。 */
@@ -375,18 +377,39 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
           </div>
         </section>
 
+        {/* ③ 指定部位：搜尋與篩選條件五件共用（放在標題列），各部位可以同時展開、分別挑，點了就指定。 */}
         <section className={SECTION}>
-          <div className={SECTION_HEAD}><span className="min-w-0">③ 指定部位{Object.keys(fixed).length ? `（${Object.keys(fixed).length}）` : ""}<small className={HINT}>若有指定等級，會顯示指定等級的狀態</small></span>
-            <span className="flex items-center gap-3">
-              {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixed({}); setFixing(null); }}>清除</button> : null}
-              <button aria-expanded={fixOpen} className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixOpen(!fixOpen); setFixing(null); }}>{fixOpen ? "收合" : "展開"} {fixOpen ? "▴" : "▾"}</button>
+          <div className={SECTION_HEAD}><span className="shrink-0">③ 指定部位{Object.keys(fixed).length ? `（${Object.keys(fixed).length}）` : ""}</span>
+            {fixOpen ? <input aria-label="搜尋裝備" value={fixQuery} onChange={(event) => setFixQuery(event.target.value)} placeholder="搜尋魔物或技能名稱"
+              className="flex-1 min-w-0 py-1 px-2 border border-[#dfe2dc] rounded-md bg-white fs-md font-normal outline-none" /> : null}
+            <span className="flex items-center gap-3 shrink-0">
+              {Object.keys(fixed).length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixed({}); setFixing([]); }}>清除</button> : null}
+              <button aria-expanded={fixOpen} className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer font-normal" onClick={() => { setFixOpen(!fixOpen); setFixing([]); }}>{fixOpen ? "收合" : "展開"} {fixOpen ? "▴" : "▾"}</button>
             </span></div>
           {fixOpen || Object.keys(fixed).length ? <div className="p-2 space-y-1.5">
+            {fixOpen ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5">
+              <span className="flex flex-wrap items-center gap-1">
+                <span className="fs-sm text-[#858d86]">依技能：</span>
+                {[...new Set([...picks.map((pick) => pick.name), ...candSkills])].map((name) => { const on = candSkills.includes(name);
+                  return <button key={name} aria-pressed={on} onClick={() => setCandSkills(on ? candSkills.filter((skill) => skill !== name) : [...candSkills, name])}
+                    className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; })}
+                {candSkills.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setCandSkills([])}>清除</button> : null}
+              </span>
+              <span className="flex flex-wrap items-center gap-1">
+                <span className="fs-sm text-[#858d86]">洞數：</span>
+                {Array.from({ length: maxHoles }, (_, index) => index + 1).map((count) => { const on = minHoles === count;
+                  return <button key={count} aria-pressed={on} title={`只看 ${count} 洞以上的防具`} onClick={() => setMinHoles(on ? 0 : count)}
+                    className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>◇ {count} 洞以上</button>; })}
+                {minHoles ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setMinHoles(0)}>清除</button> : null}
+              </span>
+              {goalCount ? <label className="ml-auto flex items-center gap-1 fs-md text-[#5b635c] cursor-pointer"><input type="checkbox" checked={onlyHit} onChange={(event) => setOnlyHit(event.target.checked)} />只看有貢獻的</label> : null}
+            </div> : null}
             {RECOMMEND_SLOTS.map((slot) => {
               const lock = fixed[slot];
               if (!fixOpen && !lock) return null;
               const item = lock ? byKey[lock.key] : undefined;
-              const lowest = Math.max(1, item?.unlock ?? 1);
+              const open = fixing.includes(slot);
+              const toggleFixing = () => setFixing(open ? fixing.filter((other) => other !== slot) : [...fixing, slot]);
               return <div key={slot} className="rounded-md bg-[#fbfaf6] border border-[#eee6d4]">
                 <div className="flex items-center gap-2 p-1.5">
                   <Icon src={gearIcons.armor[slot]} size={IC_SLOT} />
@@ -394,36 +417,15 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                   {lock && item ? <>
                     <Icon src={icons[lock.key]} size={IC} fallback={item.name} />
                     <span className="flex-1 min-w-0 truncate fs-lg font-bold">{item.name}</span>
-                    <select aria-label={`${SLOT_NAMES[slot]}階級`} value={lock.grade} onChange={(event) => setFixed({ ...fixed, [slot]: { key: lock.key, grade: Number(event.target.value) } })}
-                      className="shrink-0 py-1 px-1.5 border border-[#cfc7b4] rounded-md bg-white fs-md">
-                      {Array.from({ length: 11 - lowest }, (_, position) => lowest + position).map((value) => <option key={value} value={value}>G{value}</option>)}</select>
-                    <button className={SMALL_BUTTON} aria-expanded={fixing === slot} onClick={() => { setFixing(fixing === slot ? null : slot); setFixQuery(""); }}>{fixing === slot ? "收合" : "換"}</button>
-                    <button aria-label={`取消指定${SLOT_NAMES[slot]}`} onClick={() => { const { [slot]: _removed, ...rest } = fixed; setFixed(rest); }} className="w-6 h-6 shrink-0 border-0 bg-transparent text-[#8b938c] cursor-pointer">✕</button>
+                    <button className={SMALL_BUTTON} aria-expanded={open} onClick={toggleFixing}>{open ? "收合" : "換"}</button>
+                    <button aria-label={`取消指定${SLOT_NAMES[slot]}`} onClick={() => unfix(slot)} className="w-6 h-6 shrink-0 border-0 bg-transparent text-[#8b938c] cursor-pointer">✕</button>
                   </> : <>
                     <span className="flex-1 fs-md text-[#858d86]">自動搭配</span>
-                    <button className={SMALL_BUTTON} aria-expanded={fixing === slot} onClick={() => { setFixing(fixing === slot ? null : slot); setFixQuery(""); }}>{fixing === slot ? "收合" : "指定"}</button>
+                    <button className={SMALL_BUTTON} aria-expanded={open} onClick={toggleFixing}>{open ? "收合" : "指定"}</button>
                   </>}
                 </div>
                 {lock && item ? <p className="m-0 px-2 pb-1.5 fs-md text-[#5b635c]">{skillSpans(lock.key, slot, lock.grade)}　{pieceSlots(item, slot, lock.grade) ? `洞 ${pieceSlots(item, slot, lock.grade)}` : "沒有洞（不能鍊成）"}</p> : null}
-                {fixing === slot ? <div className="px-1.5 pb-1.5 space-y-1">
-                  <input aria-label="搜尋裝備" value={fixQuery} onChange={(event) => setFixQuery(event.target.value)} placeholder="搜尋魔物或技能名稱"
-                    className="block w-full box-border p-2 border border-[#dfe2dc] rounded-md bg-white fs-md outline-none" />
-                  <div className="flex flex-wrap items-center gap-1">
-                    <span className="fs-sm text-[#858d86]">依技能：</span>
-                    {[...new Set([...picks.map((pick) => pick.name), ...candSkills])].map((name) => { const on = candSkills.includes(name);
-                      return <button key={name} aria-pressed={on} onClick={() => setCandSkills(on ? candSkills.filter((skill) => skill !== name) : [...candSkills, name])}
-                        className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>{name}</button>; })}
-                    
-                    {candSkills.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setCandSkills([])}>清除</button> : null}
-                    {goalCount ? <label className="ml-auto flex items-center gap-1 fs-md text-[#5b635c] cursor-pointer"><input type="checkbox" checked={onlyHit} onChange={(event) => setOnlyHit(event.target.checked)} />只看有貢獻的</label> : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <span className="fs-sm text-[#858d86]">洞數：</span>
-                    {Array.from({ length: maxHoles }, (_, index) => index + 1).map((count) => { const on = minHoles === count;
-                      return <button key={count} aria-pressed={on} title={`只看 ${count} 洞以上的防具`} onClick={() => setMinHoles(on ? 0 : count)}
-                        className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>◇ {count} 洞以上</button>; })}
-                    {minHoles ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setMinHoles(0)}>清除</button> : null}
-                  </div>
+                {open ? <div className="px-1.5 pb-1.5">
                   {(() => {
                     const all = pieceCandidates(slot);
                     const current = lock ? { gain: gainOf(lock.key, slot, lock.grade), holes: pieceSlots(byKey[lock.key], slot, lock.grade) } : null;
@@ -431,12 +433,13 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                       && pieceSlots(candidate, slot, Math.max(lock!.grade, candidate.unlock ?? 1)) === current.holes) : [];
                     const row = (candidate: RecommendSeries) => {
                       const bad = hasExcluded(candidate.key, slot), gain = gainOf(candidate.key, slot, 10), selected = lock?.key === candidate.key;
-                      return <button key={candidate.key} disabled={bad} onClick={() => {
-                        const pieceGrade = Math.max(lock?.grade ?? grade, candidate.unlock ?? 1);
-                        setFixed({ ...fixed, [slot]: { key: candidate.key, grade: pieceGrade } }); setFixing(null);
+                      // 點一下就指定（面板不關，接著可以挑其他部位）；再點同一件就取消指定。
+                      return <button key={candidate.key} disabled={bad} aria-pressed={selected} onClick={() => {
+                        if (selected) { unfix(slot); return; }
+                        setFixed({ ...fixed, [slot]: { key: candidate.key, grade: Math.max(grade, candidate.unlock ?? 1) } });
                       }} className={cx("w-full flex items-center gap-2 p-1.5 rounded-md border text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed", selected ? "border-[#e0a900] bg-[#fffdf5]" : "border-[#e3dac6] bg-white hover:border-[#099aa5]")}>
                         <Icon src={icons[candidate.key]} size={IC} fallback={candidate.name} />
-                        <span className="flex-1 min-w-0"><b className="block fs-md">{candidate.name}{bad ? <small className="ml-1.5 font-normal text-[#b23a30]">含不配裝技能</small> : null}</b>
+                        <span className="flex-1 min-w-0"><b className="block fs-md">{candidate.name}{selected ? <small className="ml-1.5 font-normal text-[#b07d00]">已指定</small> : null}{bad ? <small className="ml-1.5 font-normal text-[#b23a30]">含不配裝技能</small> : null}</b>
                           <span className="block fs-md text-[#5b635c]">{skillSpans(candidate.key, slot, 10)}　{pieceSlots(candidate, slot, 10) ? `洞 ${pieceSlots(candidate, slot, 10)}` : "沒有洞"}（G10）</span></span>
                         {goalCount ? <b className="shrink-0 fs-md text-[#e08a00]">+{gain}</b> : null}
                       </button>;
@@ -446,7 +449,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                       {all.filter((candidate) => !same.includes(candidate)).map(row)}
                       {!all.length ? <p className={NOTE}>{fixFiltered
                         ? `找不到符合的裝備。${goalCount && onlyHit ? "可以取消「只看有貢獻的」。" : ""}`
-                        : "搜尋魔物或技能名稱，或選技能、洞數，就會列出候選。"}</p> : null}
+                        : "上面搜尋魔物或技能名稱，或選技能、洞數，就會列出候選。"}</p> : null}
                     </div>;
                   })()}
                 </div> : null}
