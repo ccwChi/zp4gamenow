@@ -161,6 +161,8 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   /** 換裝時只看有這些技能的裝備；沒選就用上面「② 技能」選的那些。 */
   const [candSkills, setCandSkills] = useState<string[]>([]);
   const [onlyHit, setOnlyHit] = useState(true);
+  /** 換裝時只看幾洞以上的防具（0 是不限）。 */
+  const [minHoles, setMinHoles] = useState(0);
   const [saved0] = useState(loadSettings);
   const [objective, setObjective] = useState<Objective>("stones");
   const [excludedBy, setExcludedBy] = useState(saved0.excluded);
@@ -236,12 +238,20 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   };
   const hasExcluded = (key: string, slot: Slot) => Object.keys(pieceSkills(byKey[key], slot, 10)).some((name) => excluded.includes(name));
   /** 候選裝備：搜尋字比對魔物名或技能名；有目標技能時預設只留有貢獻的，依貢獻排序。 */
+  /** 防具每個部位最多幾洞（決定顯示哪幾顆洞數篩選鈕）。 */
+  const maxHoles = useMemo(() => Math.max(0, ...series.flatMap((item) => RECOMMEND_SLOTS.map((slot) => item.slots?.[slot]?.length ?? 0))), [series]);
+  /** 有沒有下任何條件：全部防具列出來太長，先縮到用魔物／技能／洞數挑過的。 */
+  const fixFiltered = !!fixQuery.trim() || candSkills.length > 0 || minHoles > 0 || (goalCount > 0 && onlyHit);
   const pieceCandidates = (slot: Slot) => {
     const text = fixQuery.trim().toLowerCase();
+    if (!fixFiltered) return [];
     return series.filter((item) => item.hasArmor && (item.skills[slot] !== undefined || item.slots?.[slot] !== undefined)
       && (!text || item.name.toLowerCase().includes(text) || Object.keys(pieceSkills(item, slot, 10)).some((name) => name.toLowerCase().includes(text)))
-      && (!goalCount || !onlyHit || text || gainOf(item.key, slot, 10) > 0))
-      .sort((a, b) => gainOf(b.key, slot, 10) - gainOf(a.key, slot, 10) || a.name.localeCompare(b.name, "zh-Hant"));
+      && (!minHoles || pieceSlots(item, slot, 10) >= minHoles)
+      && (!candSkills.length || Object.keys(pieceSkills(item, slot, 10)).some((name) => candSkills.includes(name)))
+      && (!goalCount || !onlyHit || text || minHoles || candSkills.length || gainOf(item.key, slot, 10) > 0))
+      .sort((a, b) => gainOf(b.key, slot, 10) - gainOf(a.key, slot, 10)
+        || pieceSlots(b, slot, 10) - pieceSlots(a, slot, 10) || a.name.localeCompare(b.name, "zh-Hant"));
   };
   const skillSpans = (key: string, slot: Slot, pieceGrade: number) => {
     const entries = Object.entries(pieceSkills(byKey[key], slot, pieceGrade));
@@ -407,6 +417,13 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                     {candSkills.length ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setCandSkills([])}>清除</button> : null}
                     {goalCount ? <label className="ml-auto flex items-center gap-1 fs-md text-[#5b635c] cursor-pointer"><input type="checkbox" checked={onlyHit} onChange={(event) => setOnlyHit(event.target.checked)} />只看有貢獻的</label> : null}
                   </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="fs-sm text-[#858d86]">洞數：</span>
+                    {Array.from({ length: maxHoles }, (_, index) => index + 1).map((count) => { const on = minHoles === count;
+                      return <button key={count} aria-pressed={on} title={`只看 ${count} 洞以上的防具`} onClick={() => setMinHoles(on ? 0 : count)}
+                        className={cx("px-2 py-0.5 rounded-full border fs-md cursor-pointer", on ? TOGGLE_ON : TOGGLE_OFF)}>◇ {count} 洞以上</button>; })}
+                    {minHoles ? <button className="border-0 bg-transparent p-0 fs-md text-[#099aa5] cursor-pointer" onClick={() => setMinHoles(0)}>清除</button> : null}
+                  </div>
                   {(() => {
                     const all = pieceCandidates(slot);
                     const current = lock ? { gain: gainOf(lock.key, slot, lock.grade), holes: pieceSlots(byKey[lock.key], slot, lock.grade) } : null;
@@ -427,7 +444,9 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
                     return <div className="max-h-[260px] overflow-auto space-y-1">
                       {same.length ? <><p className={cx(NOTE, "m-0")}><b>可換</b></p>{same.map(row)}<p className={cx(NOTE, "m-0 pt-1")}><b>其他</b></p></> : null}
                       {all.filter((candidate) => !same.includes(candidate)).map(row)}
-                      {!all.length ? <p className={NOTE}>找不到符合的裝備。{goalCount && onlyHit ? "可以取消「只看有貢獻的」。" : ""}</p> : null}
+                      {!all.length ? <p className={NOTE}>{fixFiltered
+                        ? `找不到符合的裝備。${goalCount && onlyHit ? "可以取消「只看有貢獻的」。" : ""}`
+                        : "搜尋魔物或技能名稱，或選技能、洞數，就會列出候選。"}</p> : null}
                     </div>;
                   })()}
                 </div> : null}

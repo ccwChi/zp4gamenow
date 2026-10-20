@@ -1389,10 +1389,12 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
   const [monsterDisplay, setMonsterDisplay] = useState<"image" | "name">("image");
   /** 目前武器的特性（彈種、箭種、蟲棍…）視窗。 */
   const [showTraits, setShowTraits] = useState(false);
+  /** 只看幾洞以上的防具（0 是不限）。2 洞的防具很少，這樣才挑得出來；沒選技能也可以只用洞數找。 */
+  const [minHoles, setMinHoles] = useState(0);
   const candidateList = useRef<HTMLDivElement>(null);
   const candidateGroups = useRef<Partial<Record<SlotId, HTMLElement | null>>>({});
   const equippedWeaponType = build.gear.weapon?.split("::")[1] ?? "";
-  useEffect(() => { setSlot("helm"); setChoosing(null); setExtras({}); setSearchWeapons(false); setShowTraits(false); }, [build.id]);
+  useEffect(() => { setSlot("helm"); setChoosing(null); setExtras({}); setSearchWeapons(false); setShowTraits(false); setMinHoles(0); }, [build.id]);
   useEffect(() => { setWeaponType(equippedWeaponType); }, [build.id, equippedWeaponType]);
   const seriesBy = useMemo(() => Object.fromEntries(series.map((item) => [item.key, item])), [series]);
   const equipped = gearRowsOf(build, seriesBy, (type) => WEAPON_NAMES[type] ?? type, (part) => SLOT_NAMES[part]);
@@ -1402,6 +1404,10 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
   const wanted = chosen;
   const matches = gearForSkill(series, wanted, false, false, searchWeapons ? "all" : "armor");
   const candidateSlots: SlotId[] = ["weapon", ...ARMOR_SLOTS];
+  /** 這個部位升滿後的漂流洞數。 */
+  const holesOf = (part: SlotId, key: string) => part === "weapon" ? 0 : seriesBy[key.split("::")[0]]?.slots?.[part as ArmorSlot]?.length ?? 0;
+  /** 每個部位最多幾洞（決定要顯示哪幾顆洞數篩選鈕）。 */
+  const maxHoles = useMemo(() => Math.max(0, ...series.flatMap((item) => ARMOR_SLOTS.map((part) => item.slots?.[part]?.length ?? 0))), [series]);
   const totals = equipmentSkillTotals(build, series);
   const skillRows = compareSkillTotals(totals, totals, wanted);
   const toggleSkill = (name: string) => setChosen((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
@@ -1448,6 +1454,14 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
             <button type="button" onClick={() => setChosen([])} className="shrink-0 whitespace-nowrap ml-1 border-0 bg-transparent fs-sm text-[#858d86]">清除篩選</button>
           </div> : null}
           </SkillSelector>
+          {/* 洞數篩選：防具的漂流洞數，不選技能也可以單用洞數找（2 洞的防具很少）。 */}
+          <div role="group" aria-label="漂流洞數" className="mt-2 flex flex-wrap items-center gap-1">
+            <span className="fs-sm text-[#858d86]">漂流洞數</span>
+            {Array.from({ length: maxHoles }, (_, index) => index + 1).map((count) => { const on = minHoles === count; return <button key={count} type="button" aria-pressed={on}
+              title={`只看 ${count} 洞以上的防具`} onClick={() => setMinHoles(on ? 0 : count)}
+              className={cx("shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full border fs-sm", on ? "border-[#8a6bbf] bg-[#f1ebfb] text-[#5b3f93] font-bold" : "border-[#e0e3df] bg-white text-[#687168]")}>◇ {count} 洞以上</button>; })}
+            {minHoles ? <button type="button" onClick={() => setMinHoles(0)} className="shrink-0 border-0 bg-transparent fs-sm text-[#858d86]">清除</button> : null}
+          </div>
         </section>
         <div className="gear-comparison-layout">
           <section className="comparison-equipped-panel min-w-0 rounded-lg border border-[#dfe2dc] bg-[#f8f9f5] p-2">
@@ -1467,7 +1481,12 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
           <section aria-label="各部位候選裝備" className="comparison-candidates-panel min-w-0 flex flex-col rounded-lg border border-[#dfe2dc] bg-white">
             <div ref={candidateList} className="comparison-candidate-list min-h-0 overflow-auto">
               {candidateSlots.map((part) => {
-                const found = matches.filter((gear) => gear.slot === part && (part !== "weapon" || !weaponType || gear.key.split("::")[1] === weaponType));
+                const byHoles = minHoles && part !== "weapon";
+                // 沒選技能、只選洞數時，就直接從所有防具挑洞數夠的（技能篩選與洞數可以一起用）。
+                const base = wanted.length || !byHoles
+                  ? matches.filter((gear) => gear.slot === part && (part !== "weapon" || !weaponType || gear.key.split("::")[1] === weaponType))
+                  : series.filter((item) => item.hasArmor).flatMap((item) => extraGear(part, item.key));
+                const found = byHoles ? base.filter((gear) => holesOf(part, gear.key) >= minHoles) : base;
                 // 技能篩出來的排前面，自己指定的接在後面（技能沒篩到也看得到），再來才是「＋ 指定魔物」。
                 const candidates = [...found, ...(extras[part] ?? []).flatMap((key) => extraGear(part, key)).filter((gear) => !found.some((item) => item.key === gear.key))];
                 return <section key={part} ref={(element) => { candidateGroups.current[part] = element; }} aria-label={`${slotTitle(part)}候選裝備`}
@@ -1485,7 +1504,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
                     <button type="button" onClick={() => setChoosing({ slot: "weapon", mode: "replace" })} className="ml-auto px-2 py-1 rounded border border-[#bca77e] bg-[#fffaf0] fs-sm text-[#80602d]">更換武器／魔物</button>
                   </div> : null}
                   {part !== "weapon" || searchWeapons ? <div className="comparison-candidate-group-grid">
-                    {!wanted.length ? <p className={cx(NOTE, "col-span-full m-0 py-1")}>{part === "weapon" ? "選擇技能後列出候選，也可直接更換武器。" : `${slotTitle(part)}：請先搜尋或選擇技能。`}</p>
+                    {!wanted.length && !byHoles ? <p className={cx(NOTE, "col-span-full m-0 py-1")}>{part === "weapon" ? "選擇技能後列出候選，也可直接更換武器。" : `${slotTitle(part)}：請先選技能或洞數。`}</p>
                       : !found.length ? <p className={cx(NOTE, "col-span-full m-0 py-1")}>{slotTitle(part)}沒有符合的裝備。</p> : null}
                     {candidates.map((gear) => {
                       const selected = build.gear[part] === gear.key;
