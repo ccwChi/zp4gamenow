@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calculateRange, compareMaterials, driftColor, materialCategory, totalMissing, driftContribution, resolveTarget, rowsInRange, searchSeries, seriesSkills, skillTiers, skillsAtGrade } from "./MhnowApp";
+import { readFileSync } from "node:fs";
+import { effectTable } from "./damage";
+import { initialBuildState, type Build } from "./buildStore";
+import { buildDamage, calculateRange, compareMaterials, driftColor, materialCategory, totalMissing, driftContribution, resolveTarget, rowsInRange, searchSeries, seriesSkills, skillTiers, skillsAtGrade } from "./MhnowApp";
 
 const rows = [
   { grade: "6-3", zenny: 30, materials: [{ name: "甲殼", quantity: 3 }] },
@@ -262,5 +265,42 @@ describe("material grouping for the summary", () => {
     ];
     const sorted = [...list].sort((a, b) => compareMaterials(a, b, (key) => names[key] ?? key)).map((item) => item.name);
     expect(sorted).toEqual(["鐵礦石", "搔鳥的皮", "搔鳥的喙", "爆鱗龍的鱗", "爆鱗龍的尾巴"]);
+  });
+});
+
+describe("buildDamage", () => {
+  const index: { skillLevels: Record<string, string[]> } = JSON.parse(readFileSync("public/mhnow/series-index.json", "utf8"));
+  const effects = effectTable(index.skillLevels);
+  const weapon = { key: "w", name: "弓", id: 1, unlock: 1, weaponTypes: ["bow"], hasArmor: false, skills: { weapon: [] }, traits: {},
+    weaponElement: "white", weaponStats: { white: { atk: Array(10).fill(1000), crit: Array(10).fill(0) } } };
+  const attack = (level: number) => [{ skill: "攻擊", levels: [{ grade: 1, level }] }];
+  const rows = (entries: { skill: string; levels: { grade: number; level: number }[] }[]) => [
+    { id: "weapon" as const, kind: "bow", title: "弓", icon: "", item: weapon as never, itemKey: "w::bow", entries: [], slotGrades: [] },
+    { id: "helm" as const, kind: "armor", title: "頭", icon: "", item: weapon as never, itemKey: "a", entries, slotGrades: [1] },
+  ];
+  const context = (conditions: string[] = []) => ({ icons: {}, skillLevels: index.skillLevels, driftstones: null, gradeRowsFor: () => undefined,
+    discounted: [], effects, conditions, onCondition: () => {} });
+  const build = (drifts: string[] = []): Build => ({ ...initialBuildState().builds[0], gear: { weapon: "w::bow", helm: "a" },
+    drifts: { helm: drifts.map((skill) => ({ skill, color: "" })) } });
+
+  it("needs a weapon with stats before it can calculate anything", () => {
+    const noWeapon: Build = { ...initialBuildState().builds[0], gear: {} };
+    expect(buildDamage(noWeapon, rows([]), context())).toBe(null);
+  });
+
+  it("counts forged attack before the attack percentage, and gear attack after it", () => {
+    const gear = buildDamage(build(), rows(attack(1)), context())!;
+    const forged = buildDamage(build(["攻擊"]), rows([]), context())!;
+    expect(gear.index).toBeGreaterThan(gear.index / (1 + gear.gain));
+    // 同樣是攻擊 1，鍊成的會被攻擊%乘到，所以不會比裝備自帶的低。
+    expect(forged.index).toBeGreaterThanOrEqual(gear.index);
+  });
+
+  it("lists only the conditional skills this build actually has, and counts them once switched on", () => {
+    const off = buildDamage(build(), rows(attack(1).concat({ skill: "連擊", levels: [{ grade: 1, level: 5 }] })), context())!;
+    expect(off.conditions).toEqual(["連擊"]);
+    const on = buildDamage(build(), rows(attack(1).concat({ skill: "連擊", levels: [{ grade: 1, level: 5 }] })), context(["連擊"]))!;
+    expect(on.index).toBeGreaterThan(off.index);
+    expect(buildDamage(build(), rows(attack(1)), context())!.conditions).toEqual([]);
   });
 });

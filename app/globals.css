@@ -52,6 +52,10 @@
   .app-modal-narrow{max-width:min(360px,var(--modal-max))}
 }
 
+/* 長技能名用的：不換行、可以左右拉，但不顯示捲軸（捲軸會把一行撐高、也很醜）。 */
+.drag-scroll{display:block;overflow-x:auto;white-space:nowrap;scrollbar-width:none;overscroll-behavior-inline:contain;touch-action:pan-x}
+.drag-scroll::-webkit-scrollbar{display:none}
+
 /* 選魔物的視窗：寬度跟其他對話框一樣（太寬的話一列會排到二十隻，反而難找），
    只有高度放寬，魔物很多就整個視窗捲動，不另外內捲。 */
 @media (min-width:621px){

@@ -13,6 +13,7 @@ import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
 import { sortSeries } from "./seriesSort";
 import { WEAPON_ELEMENT_NAMES, hasWeaponElement } from "./weaponElements";
 import { weaponSetup } from "./recommendBuilds";
+import { DEFAULT_CONDITIONS, SKILL_EFFECTS, activeSkills, damageIndex, effectTable, type EffectTable } from "./damage";
 import { styleName, stylesFor } from "./weaponStyles";
 import { ElementFilter } from "./ElementFilter";
 import { compareSkillTotals, equipmentDriftSlots, equipmentSkillTotals, replaceComparisonGear } from "./gearComparison";
@@ -126,6 +127,34 @@ export function driftColor(pick: DriftPick, data: Driftstones | null): string {
   if (pick.color) return pick.color;
   return data?.colors.find((color) => color.skills.some((skill) => skill.name === pick.skill))?.key
     ?? (data?.common.includes(pick.skill) ? "common" : "event");
+}
+
+/**
+ * 太長的技能名不換行（換行會把一列撐成兩行、版面很亂），改成可以用滑鼠拖著左右拉，不顯示捲軸。
+ * 拖過之後不觸發外層按鈕的點擊，免得想拉一下卻跳出技能說明。觸控維持瀏覽器原本的捲動。
+ */
+function DragScroll({ children, className, title }: { children: ReactNode; className?: string; title?: string }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const drag = useRef<{ x: number; left: number } | null>(null);
+  const dragged = useRef(false);
+  return <span ref={box} title={title} className={cx("drag-scroll", className)}
+    onPointerDown={(event) => {
+      const element = box.current;
+      if (event.pointerType !== "mouse" || !element || element.scrollWidth <= element.clientWidth) return;
+      drag.current = { x: event.clientX, left: element.scrollLeft };
+      dragged.current = false;
+      element.setPointerCapture(event.pointerId);
+    }}
+    onPointerMove={(event) => {
+      const element = box.current;
+      if (!drag.current || !element) return;
+      const moved = event.clientX - drag.current.x;
+      if (Math.abs(moved) > 3) dragged.current = true;
+      element.scrollLeft = drag.current.left - moved;
+    }}
+    onPointerUp={(event) => { box.current?.releasePointerCapture(event.pointerId); drag.current = null; }}
+    onClick={(event) => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); dragged.current = false; } }}
+  >{children}</span>;
 }
 
 /** 共通漂流石（每種顏色都能出）用彩虹色，一看就知道不是某一色專屬的。 */
@@ -790,6 +819,36 @@ export function setArmorSkillTargets(build: Build, seriesBy: Record<string, Seri
 }
 
 /** 全套（武器＋五件防具＋漂流石）升到頂之後的技能總和。 */
+/**
+ * 這套配裝的傷害：用跟「建議配裝（最大傷害）」同一個公式（damage.ts）。
+ * 技能要分成裝備固有與漂流鍊成（公式裡鍊成的攻擊是乘算前、裝備的是乘算後）。
+ * 回傳的指數只拿來跟其他配裝比，不是遊戲裡的實際傷害數字。
+ */
+export function buildDamage(build: Build, rows: GearRow[], ctx: CardContext) {
+  const weaponType = (build.gear.weapon ?? "").split("::")[1] ?? "";
+  const weapon = rows.find((row) => row.id === "weapon")?.item;
+  const setup = weapon && weaponType ? weaponSetup(weapon, weaponType, MAX_GRADE) : undefined;
+  if (!setup) return null;
+  const native: Record<string, number> = {}, drift: Record<string, number> = {};
+  for (const row of rows) {
+    if (!row.item) continue;
+    addSkills(native, skillsAtGrade(row.entries, MAX_GRADE));
+    if (row.id !== "weapon") addSkills(drift, driftContribution(build.drifts[row.id], row.slotGrades.length));
+  }
+  const active = new Set(activeSkills(ctx.effects, setup.element, ctx.conditions));
+  const caps = Object.fromEntries([...active].map((skill) => [skill, ctx.skillLevels[skill]?.length ?? 5]));
+  const index = damageIndex(native, drift, setup, ctx.effects, active, caps);
+  const base = damageIndex({}, {}, setup, ctx.effects, active, caps);
+  // 身上有、但要看狀況才發動的技能：境界類跟著它依賴的技能一起勾。
+  const conditions = [...new Set(Object.keys({ ...native, ...drift }).flatMap((skill) => {
+    const effect = SKILL_EFFECTS[skill];
+    if (!effect) return [];
+    const gate = effect.requires && SKILL_EFFECTS[effect.requires]?.condition ? effect.requires : skill;
+    return SKILL_EFFECTS[gate]?.condition ? [gate] : [];
+  }))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  return { setup, index, gain: base ? index / base - 1 : 0, conditions };
+}
+
 function maxSkillsOf(build: Build, rows: GearRow[]) {
   const result: Record<string, number> = {};
   for (const row of rows) {
@@ -825,7 +884,9 @@ function MissingMaterials({ rows, range, waived }: { rows: GradeRow[] | undefine
 /** BuildCard 需要的共用資料（每張卡都一樣）。gradeRowsFor 已套用素材減免；discounted 是減免中的魔物。 */
 type CardContext = { icons: Record<string, string>; skillLevels: Record<string, string[]>; driftstones: Driftstones | null; gradeRowsFor: (key: string, kind: string) => GradeRow[] | undefined; discounted: string[];
   /** 每件裝備已練成的漂流石技能（裝備代號 → 技能）。沒給＝全部當成已有（社群配裝那種唯讀卡片）。 */
-  forged?: Record<string, string[]> };
+  forged?: Record<string, string[]>;
+  /** 算傷害用：技能效果表，以及目前假設會發動的條件技能（全站共用一份）。 */
+  effects: EffectTable; conditions: string[]; onCondition: (skill: string) => void };
 
 /** 技能總覽用：每個技能由哪些顏色的漂流石提供、各幾顆（只算實際有洞的）。 */
 function driftStonesBySkill(build: Build, rows: GearRow[], data: Driftstones | null) {
@@ -915,6 +976,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
   const skills = maxSkillsOf(build, rows);
   const stones = driftStonesBySkill(build, rows, ctx.driftstones);
   const anyStone = Object.keys(stones).length > 0;
+  const damage = buildDamage(build, rows, ctx);
   const h4 = (first?: boolean) => cx("mb-1.5 mx-0 fs-md text-[#6d756e] font-bold", first ? "mt-1 pt-0" : "mt-3 pt-2.5 [border-top:1px_dashed_#e8dfcb]");
   const toolButton = "flex-none py-1 px-2 border rounded-md fs-md cursor-pointer";
   return <article id={`build-${build.id}`} className="min-w-0 flex flex-col gap-1.5 p-2 max-[620px]:p-1.5 rounded-xl bg-[#ece8dc] border border-[#d8d0bd]">
@@ -964,7 +1026,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
               <strong className="fs-lg font-bold truncate">{row.title}</strong>
               <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{Object.entries(skillsAtGrade(row.entries, MAX_GRADE)).map(([name, level]) => <span key={name}>{name} <b className="text-[#e08a00] font-bold">{level}</b></span>)}</small>
               {drifts.slice(0, row.slotGrades.length).some(Boolean) ? <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{drifts.slice(0, row.slotGrades.length).map((pick, position) => pick
-                ? <span key={position} className={cx("inline-flex items-center gap-[3px]", !owns(pick) && "opacity-60")}><DriftHex color={driftColor(pick, ctx.driftstones)} size={11} />{pick.skill}{!owns(pick) ? <em className="not-italic fs-sm text-[#b26a00]">尚未</em> : null}</span> : null)}</small> : null}
+                ? <span key={position} className={cx("inline-flex items-center gap-[3px]", !owns(pick) && "opacity-60")}><DriftHex color={driftColor(pick, ctx.driftstones)} size={11} /><DragScroll className="max-w-[9em]" title={pick.skill}>{pick.skill}</DragScroll>{!owns(pick) ? <em className="not-italic fs-sm text-[#b26a00]">尚未</em> : null}</span> : null)}</small> : null}
               {row.traits && !row.itemKey.endsWith("::insect-glaive") ? <TraitSummary traits={row.traits} /> : null}
             </span>
           </> : <span className="min-w-0 flex flex-col gap-0.5"><strong className="fs-lg font-semibold truncate text-[#8b938c]">{row.title}</strong><small className={cx(GEAR_SMALL, "text-[#a4aaa4]")}>點擊選擇</small></span>}
@@ -1009,11 +1071,11 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         <span>漂流石完成度</span><b className={progress.have === progress.total ? "text-[#3e8e51]" : "text-[#e08a00]"}>{progress.have}／{progress.total}</b>
         <span>{progress.have === progress.total ? "全部已練成" : `還有 ${progress.total - progress.have} 顆尚未練成`}</span></p> : null;
     })()}
-    {Object.keys(skills).length ? <section className="bg-[#fffaf0] border border-[#e3dac6] rounded-[10px] py-2.5 px-3">
+    {Object.keys(skills).length || damage ? <section className="bg-[#fffaf0] border border-[#e3dac6] rounded-[10px] py-2.5 px-3">
       <div className="grid grid-cols-2 gap-x-5 gap-y-2">{Object.entries(skills).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hant")).map(([name, level]) => {
         const cap = ctx.skillLevels[name]?.length; const segments = cap ?? Math.max(BAR_SEGMENTS, level);
         return <button key={name} className="block w-full border-0 bg-transparent py-1 px-1.5 -my-1 -mx-1.5 box-content text-left cursor-pointer rounded-md hover:bg-[#f3ecdb]" onClick={() => onSkill(name, level)}>
-          <p className="flex justify-between items-baseline gap-1 mt-0 mx-0 mb-1 fs-md text-[#2b332c]"><span className="min-w-0">{name}</span><b className={cx("fs-lg", cap !== undefined && level > cap ? "text-[#d23c3c]" : "text-[#e08a00]")}>{level}</b></p>
+          <p className="flex justify-between items-baseline gap-1 mt-0 mx-0 mb-1 fs-md text-[#2b332c]"><DragScroll className="min-w-0 flex-1" title={name}>{name}</DragScroll><b className={cx("fs-lg", cap !== undefined && level > cap ? "text-[#d23c3c]" : "text-[#e08a00]")}>{level}</b></p>
           <div className="flex items-center gap-1">
             <div className="flex-1 min-w-0 flex gap-[3px]">{Array.from({ length: segments }, (_, position) => <i key={position}
               className={cx("flex-[0_0_calc((100%_-_4*3px)/5)] h-2 [transform:skewX(-20deg)] rounded-[1px]", position < level ? "bg-[#f59a00]" : "bg-[#dcd6c8]")} />)}</div>
@@ -1025,6 +1087,22 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
           </div>
         </button>;
       })}</div>
+      {/* 傷害計算：跟「建議配裝（最大傷害）」同一個公式，指數只用來比較配裝。 */}
+      {damage ? <div className="mt-2.5 pt-2.5 [border-top:1px_dashed_#e8dfcb]">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="fs-md font-bold text-[#6d756e]" title="用武器數值與整套技能算出來的相對指數；數字只拿來跟其他配裝比，不是遊戲裡的實際傷害">傷害指數</span>
+          <b className="fs-xl tabular-nums text-[#2b332c]">{Math.round(damage.index).toLocaleString()}</b>
+          <span className="fs-md text-[#5b635c]" title="同一把武器、完全不帶技能的比較基準">技能加成 <b className="text-[#e08a00]">+{Math.round(damage.gain * 100)}%</b></span>
+          <span className="ml-auto fs-md text-[#858d86]">攻擊 {damage.setup.atk}{damage.setup.ele ? `　${WEAPON_ELEMENT_NAMES[damage.setup.element as keyof typeof WEAPON_ELEMENT_NAMES] ?? damage.setup.element} ${damage.setup.ele}` : ""}　會心 {damage.setup.crit}%</span>
+        </div>
+        {damage.conditions.length ? <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          <span className="fs-sm text-[#858d86]">條件技能</span>
+          {damage.conditions.map((skill) => { const on = ctx.conditions.includes(skill);
+            return <button key={skill} type="button" aria-pressed={on} title={`${skill}：${SKILL_EFFECTS[skill]?.condition ?? ""}發動；勾了就當成一直發動`}
+              onClick={() => ctx.onCondition(skill)}
+              className={cx("px-2 py-0.5 rounded-full border fs-sm cursor-pointer", on ? "border-[#e0a900] bg-[#fffdf5] text-[#2b332c] font-bold" : "border-[#e0e3df] bg-white text-[#687168]")}>{skill}</button>; })}
+        </div> : null}
+      </div> : null}
     </section> : null}
     {footer}
   </article>;
@@ -1083,6 +1161,8 @@ function GearDetail({ entries, slotGrades, major, skillLevels, onSkill }: {
 
 /** 裝備庫卡片最窄的寬度；畫面放得下幾張就排幾欄，最多 GEAR_MAX_COLUMNS 欄。 */
 const GEAR_MIN_CARD = 260;
+/** 傷害計算裡「假設會發動」的條件技能清單。 */
+const DAMAGE_CONDITIONS_KEY = "mhnow.damage.conditions.v1";
 const GEAR_MAX_COLUMNS = 5;
 const GEARBOX_VIEW_KEY = "mhnow.gearbox.v1";
 
@@ -1882,6 +1962,23 @@ export default function MhnowApp() {
   }, [discounted, discountRestored]);
   const toggleDiscount = (key: string) => setDiscounted((state) => (state.includes(key) ? state.filter((item) => item !== key) : [...state, key]));
 
+  // 傷害計算：假設會發動的條件技能（連擊、弱點特效…）全站共用，記在瀏覽器裡。
+  const [conditions, setConditions] = useState<string[]>(DEFAULT_CONDITIONS);
+  const [conditionsRestored, setConditionsRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(DAMAGE_CONDITIONS_KEY) ?? "null");
+      if (Array.isArray(saved)) setConditions(saved.filter((name): name is string => typeof name === "string"));
+    } catch { /* 讀不到就用預設（都不發動） */ }
+    setConditionsRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!conditionsRestored) return;
+    try { localStorage.setItem(DAMAGE_CONDITIONS_KEY, JSON.stringify(conditions)); } catch { /* 存不了就只在這次有效 */ }
+  }, [conditions, conditionsRestored]);
+  const toggleCondition = (skill: string) => setConditions((state) => state.includes(skill) ? state.filter((name) => name !== skill) : [...state, skill]);
+  const skillEffects = useMemo(() => effectTable(index?.skillLevels ?? {}), [index]);
+
   // 魔物選單一律照原始資料（series-index.json）的順序。
   const allSeries = useMemo(() => index?.series ?? [], [index]);
   const seriesBy = useMemo(() => Object.fromEntries(allSeries.map((item) => [item.key, item])), [allSeries]);
@@ -1932,7 +2029,8 @@ export default function MhnowApp() {
     const rows = gradeRowsFor(key, kind);
     return rows && kind !== "armor" && discounted.includes(key) ? waiveGatherMaterials(rows) : rows;
   };
-  const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor: loadoutRowsFor, discounted, forged: builds.forged ?? {} };
+  const cardContext: CardContext = { icons, skillLevels: index?.skillLevels ?? {}, driftstones, gradeRowsFor: loadoutRowsFor, discounted, forged: builds.forged ?? {},
+    effects: skillEffects, conditions, onCondition: toggleCondition };
   const plansIncluded = !stats.excludedBuilds.includes(PLANNED_STATS_ID);
   const statsPieces = [
     ...statsPlan.map(({ row, series, piece }) => ({ key: `${row.id}|${row.itemKey}`, rows: loadoutRowsFor(series, row.kind), range: piece })),
