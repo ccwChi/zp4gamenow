@@ -13,6 +13,7 @@ import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
 import { sortSeries } from "./seriesSort";
 import { WEAPON_ELEMENT_NAMES, hasWeaponElement } from "./weaponElements";
 import { weaponSetup } from "./recommendBuilds";
+import { APP_SCALE_KEY, SCALE_STEPS, effectiveScale, parseAppScale, type AppScale } from "./appScale";
 import { DEFAULT_CONDITIONS, SKILL_EFFECTS, activeSkills, damageIndex, effectTable, type EffectTable } from "./damage";
 import { styleName, stylesFor } from "./weaponStyles";
 import { ElementFilter } from "./ElementFilter";
@@ -1977,6 +1978,23 @@ export default function MhnowApp() {
     try { localStorage.setItem(DAMAGE_CONDITIONS_KEY, JSON.stringify(conditions)); } catch { /* 存不了就只在這次有效 */ }
   }, [conditions, conditionsRestored]);
   const toggleCondition = (skill: string) => setConditions((state) => state.includes(skill) ? state.filter((name) => name !== skill) : [...state, skill]);
+
+  // 畫面大小：預設依視窗寬度自動（顯示縮放不同的電腦看起來才差不多），使用者選過就聽他的。
+  const [appScale, setAppScale] = useState<AppScale>("auto");
+  useEffect(() => {
+    try { setAppScale(parseAppScale(localStorage.getItem(APP_SCALE_KEY))); } catch { /* 讀不到就用自動 */ }
+  }, []);
+  useEffect(() => {
+    const apply = () => document.documentElement.style.setProperty("--app-scale",
+      String(effectiveScale(appScale, window.innerWidth, window.innerWidth > 620)));
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, [appScale]);
+  const chooseScale = (next: AppScale) => {
+    setAppScale(next);
+    try { localStorage.setItem(APP_SCALE_KEY, String(next)); } catch { /* 存不了就只在這次有效 */ }
+  };
   const skillEffects = useMemo(() => effectTable(index?.skillLevels ?? {}), [index]);
 
   // 魔物選單一律照原始資料（series-index.json）的順序。
@@ -2128,6 +2146,14 @@ export default function MhnowApp() {
   return <main className="min-h-[calc(100dvh/var(--app-scale))] bg-[#f4f3ee] text-[#222823]">
     <header className="h-[40px] px-[max(16px,calc((100%_-_360px)/2))] grid grid-cols-[1fr_auto] items-center border-b border-[#d9ddd6] bg-[#fafaf7]">
       <div className="text-center"><strong className="fs-xl">配裝紀錄</strong></div>
+      {/* 顯示大小：不同電腦的作業系統縮放不一樣，自動不合意時可以自己調（只記在這台）。 */}
+      <label className="flex items-center gap-1 fs-sm text-[#687168]" title="畫面整體的大小。自動＝依視窗寬度判斷；調整只會記在這台電腦">顯示
+        <select aria-label="顯示大小" value={String(appScale)} onChange={(event) => chooseScale(parseAppScale(event.target.value))}
+          className="border border-[#d8d0bd] rounded bg-white py-0.5 px-1 fs-sm">
+          <option value="auto">自動</option>
+          {SCALE_STEPS.map((step) => <option key={step} value={step}>{Math.round(step * 100)}%</option>)}
+        </select>
+      </label>
     </header>
     <nav className="flex flex-wrap justify-center gap-2 max-[620px]:gap-1 p-3 max-[620px]:p-2 border-b border-[#d9ddd6]">{navButton("loadout", "配裝")}{navButton("calculator", "素材計算器")}{navButton("driftstone", "漂流石")}{navButton("gearbox", "我的裝備庫")}{navButton("community", "社群配裝")}</nav>
 
