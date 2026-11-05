@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --pool=threads --poolOptions.threads.singleThread=true",
+    "data:mhn-quest": "node scripts/sync-mhn-quest.mjs",
     "data:mhnow": "node scripts/build-mhnow-data.mjs",
     "data:community": "node scripts/build-community-builds.mjs",
     "data:mhnow-icons": "node scripts/download-mhnow-monster-icons.mjs",
