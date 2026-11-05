@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { assetPath } from "./assetPath";
-import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
+import { iconsForWeapon, weaponTitle as titleOfWeapon } from "./weaponOverrides";
 import type { Build } from "./buildStore";
 import { FloatingPicker } from "./FloatingPicker";
 import { popularSkills } from "./popularSkills";
@@ -205,7 +205,7 @@ export function RecommendPicker({ series, stones, skillLevels, weaponNames, icon
   }, [maxLevels, series, driftSkills]);
 
   const [weaponKey, weaponType] = weapon.split("::");
-  const weaponTitle = weapon ? `${weaponSeriesName(weaponKey, weaponType, byKey[weaponKey]?.name)}${weaponNames[weaponType] ?? ""}` : "";
+  const weaponTitle = weapon ? titleOfWeapon(weaponKey, weaponType, byKey[weaponKey]?.name ?? "", weaponNames[weaponType] ?? "") : "";
   const weaponIcons = iconsForWeapon(icons, weaponType);
   const required = Object.fromEntries(picks.filter((pick) => pick.mode !== "bonus").map((pick) => [pick.name, pick.level]));
   const driftOnly = picks.filter((pick) => pick.mode === "drift").map((pick) => pick.name);

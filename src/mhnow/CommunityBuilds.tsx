@@ -6,6 +6,7 @@ import type { Build, DriftPick } from "./buildStore";
 import { SkillGroups } from "./SkillGroups";
 import { ElementFilter } from "./ElementFilter";
 import { hasWeaponElement, type ElementSource } from "./weaponElements";
+import { gearIcon, weaponSeriesName } from "./weaponOverrides";
 
 type Entry = {
   /** rank：按讚數排行的名次。time：首次分享的時間（秒），舊資料沒有。 */
@@ -97,6 +98,14 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
   // 先選武器或先選魔物都可以：選了一邊，另一邊沒有對應配裝資料的選項會停用，所以不會選成 0 套。
   const typeAvailable = (option: string) => !monster || builds.some((entry) => entry.type === option && weaponMonster(entry) === monster);
   const monsterAvailable = (key: string) => !type || builds.some((entry) => entry.type === type && weaponMonster(entry) === key);
+  // 魔物按鈕的名稱與圖示：選了武器種類就用該種類；沒選時，這隻魔物的配裝若只用一種武器，也用它的專屬名稱與圖示。
+  const typeForMonster = (key: string) => {
+    if (type) return type;
+    const used = new Set(builds.filter((entry) => weaponMonster(entry) === key).map((entry) => entry.type));
+    return used.size === 1 ? [...used][0] : "";
+  };
+  const monsterName = (key: string) => weaponSeriesName(key, typeForMonster(key), nameOf[key] ?? key);
+  const monsterIcon = (key: string) => gearIcon(icons, `${key}::${typeForMonster(key)}`);
   const pickType = (option: string) => { setType(type === option ? "" : option); setLimit(PAGE_SIZE); };
   const pickMonster = (key: string) => { setMonster(monster === key ? "" : key); setLimit(PAGE_SIZE); setChoosingMonster(false); };
   const toggleSkill = (name: string) => { setChosenSkills(activeSkills.includes(name) ? activeSkills.filter((item) => item !== name) : [...activeSkills, name]); setLimit(PAGE_SIZE); };
@@ -132,7 +141,7 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
       <div className="flex items-center gap-2"><span className={cx(label, "pt-0")}>魔物</span>
         <span className={cx("inline-flex items-center rounded-lg border fs-md", monster ? "border-[#099aa5] bg-[#eef8f7]" : "border-[#d8d0bd] bg-white")}>
           <button onClick={() => setChoosingMonster(true)} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-2 border-0 bg-transparent text-[#2b332c] cursor-pointer">
-            {monster ? icon(icons[monster], "w-[var(--ic)] h-[var(--ic)]") : null}<b>{monster ? nameOf[monster] ?? monster : "全部"}</b><span aria-hidden="true" className="fs-sm text-[#8b938c]">▾</span>
+            {monster ? icon(monsterIcon(monster), "w-[var(--ic)] h-[var(--ic)]") : null}<b>{monster ? monsterName(monster) : "全部"}</b><span aria-hidden="true" className="fs-sm text-[#8b938c]">▾</span>
           </button>
           {monster ? <button aria-label="清除魔物篩選" onClick={() => pickMonster(monster)} className="py-1 pr-2.5 pl-1 border-0 bg-transparent text-[#8b938c] cursor-pointer hover:text-[#2b332c]">✕</button> : null}
         </span>
@@ -157,10 +166,10 @@ export function CommunityBuilds({ series, icons, weaponIcons, weaponTypeName, re
       <div className="mb-2 p-2 rounded-lg border border-[#e3dac6] bg-[#fffaf0]"><ElementFilter value={element} onChange={setElement} /></div>
       <div role="group" aria-label="魔物" className="flex flex-wrap gap-1 content-start">
         <button aria-pressed={!monster} title="全部魔物" onClick={() => pickMonster("")} className={cx(tile(!monster), "fs-md font-bold")}>全</button>
-        {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = nameOf[key] ?? key; return <button key={key} aria-pressed={monster === key} aria-label={name}
+        {monsterKeys.map((key) => { const available = monsterAvailable(key); const name = monsterName(key); const src = monsterIcon(key); return <button key={key} aria-pressed={monster === key} aria-label={name}
           disabled={!available} title={available ? name : `${name}（沒有${weaponTypeName(type)}的配裝）`} onClick={() => pickMonster(key)}
           className={cx(tile(monster === key), "disabled:opacity-25 disabled:cursor-not-allowed")}>
-          {icons[key] ? icon(icons[key], "w-[var(--ic)] h-[var(--ic)]") : <span className="fs-sm font-bold leading-[1.1] px-1.5">{name}</span>}</button>; })}
+          {src ? icon(src, "w-[var(--ic)] h-[var(--ic)]") : <span className="fs-sm font-bold leading-[1.1] px-1.5">{name}</span>}</button>; })}
         {monsterKeys.length ? null : <p className="m-0 fs-md text-[#8b938c]">沒有這個屬性的魔物配裝。</p>}
       </div>
       </>) : null}

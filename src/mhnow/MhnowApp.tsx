@@ -6,7 +6,8 @@ import { CLEAR_ON_CLOSE_KEY, DEFAULT_CLEAR_ON_CLOSE, FloatingPicker, parseClearO
 import { CommunityBuilds } from "./CommunityBuilds";
 import { fromMhnowMeLink, toMhnowMeLink } from "./mhnowMe";
 import { RecommendPicker } from "./RecommendPicker";
-import { iconsForWeapon, weaponSeriesName } from "./weaponOverrides";
+import { gearIcon, iconsForWeapon, weaponSeriesName, weaponTitle } from "./weaponOverrides";
+import { driftPickOptions, searchDriftSkills } from "./driftSearch";
 import { moveBuild } from "./buildStore";
 import { skillsAtGrade, type SeriesSkill } from "./skills";
 import { automaticTarget, validCurrentGrade } from "./upgradeTarget";
@@ -435,6 +436,8 @@ function DriftTabs({ tabs, value, onChange, big, trailing }: { tabs: { key: stri
 /** 選漂流石技能；記下的顏色就是挑技能時所在的分頁（六色、共通或神秘）。 */
 function DriftstonePicker({ data, current, onPick }: { data: Driftstones; current: DriftPick | null; onPick: (pick: DriftPick | null) => void }) {
   const [tab, setTab] = useState(current ? driftColor(current, data) : "fire");
+  const [query, setQuery] = useState("");
+  const hits = searchDriftSkills(data, query);
   const color = data.colors.find((item) => item.key === tab);
   const skillButton = (name: string, rare = false, cell = false) => <button key={name} onClick={() => onPick({ skill: name, color: tab })}
     className={cx("inline-flex items-center gap-1 py-1.5 px-2.5 border rounded-lg text-[#2b332c] fs-md cursor-pointer", cell && SKILL_CELL,
@@ -442,6 +445,18 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
     {name}{rare ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}
   </button>;
   return <div>
+    <input type="search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜尋漂流石技能" placeholder="直接搜尋技能，不用先選顏色（例如：火強）"
+      className="w-full box-border mb-2.5 py-2 px-3 border border-[#d8d0bd] rounded-lg bg-white fs-md" />
+    {query.trim() ? <div className="flex flex-col gap-1.5">
+      {!hits.length ? <p className={cx(NOTE, "m-0")}>沒有符合的技能。</p> : null}
+      {hits.map((hit) => <div key={hit.name} className="flex flex-wrap items-center gap-1.5 py-1.5 border-b border-[#f1efe8] last:border-b-0">
+        <strong className="fs-md text-[#2b332c] mr-1">{hit.name}</strong>
+        {driftPickOptions(data, hit).map((option) => <button key={option.color} aria-label={`選擇${option.label}的${hit.name}`} onClick={() => onPick({ skill: hit.name, color: option.color })}
+          className={cx("inline-flex items-center gap-1 py-1 px-2 border rounded-full text-[#39423a] fs-md cursor-pointer", current?.skill === hit.name && driftColor(current, data) === option.color ? "border-[#e08a00] bg-[#fff3dc]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#c9bd9f]")}>
+          <DriftHex color={option.color} size={12} />{option.label}{option.rare ? <em className="not-italic text-[#e08a00] fs-md">★</em> : null}
+        </button>)}
+      </div>)}
+    </div> : <>
     <DriftTabs tabs={[...data.colors.map((item) => ({ key: item.key, label: item.label })), { key: "common", label: "共通" }, { key: "event", label: "神秘" }]} value={tab} onChange={setTab}
       trailing={current ? <button className="py-[5px] px-2.5 border border-[#e3b8b4] rounded-full bg-white text-[#b23a30] fs-md cursor-pointer" onClick={() => onPick(null)}>清除</button> : null} />
     <div className="flex flex-wrap gap-1.5">
@@ -452,13 +467,17 @@ function DriftstonePicker({ data, current, onPick }: { data: Driftstones; curren
         <small className="flex-[0_0_100%] mt-1.5 text-[#8b938c] fs-sm">{group.label}</small>{group.skills.map((name) => skillButton(name, mixedRare(group, name)))}
       </div>) : null}
     </div>
+    </>}
   </div>;
 }
 
 /** 漂流石查詢頁：選顏色看來源魔物、技能池與機率；共通、神秘各自列出。 */
 function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; icons: Record<string, string>; onSkill: (skill: string) => void }) {
   const [tab, setTab] = useState("fire");
+  const [query, setQuery] = useState("");
   if (!data) return <p className={NOTE}>資料載入中……</p>;
+  const searching = query.trim().length > 0;
+  const hits = searchDriftSkills(data, query);
   const color = data.colors.find((item) => item.key === tab);
   const chips = [...data.colors.map((item) => ({ key: item.key, label: item.label })), { key: "common", label: "共通" }, { key: "event", label: "神秘" }];
   const skillName = (name: string) => <button onClick={() => onSkill(name)}
@@ -467,7 +486,30 @@ function DriftstoneView({ data, icons, onSkill }: { data: Driftstones | null; ic
   const panelTitle = "fs-lg mt-2 mx-0 mb-1.5";
   const chipList = <div className="flex flex-wrap gap-x-3 gap-y-1 fs-md text-[#39423a]">{data.common.map((name) => <span key={name}>{skillName(name)}</span>)}</div>;
   const row = "flex justify-between items-center m-0 fs-lg";
+  const search = <div className="relative mb-2.5">
+    <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜尋漂流石技能" placeholder="搜尋技能，看哪些石頭練得出來（例如：火強）"
+      className="w-full box-border py-2 px-3 border border-[#d8d0bd] rounded-lg bg-white fs-lg" />
+  </div>;
+  if (searching) return <div>
+    {search}
+    <p className={cx(NOTE, "mt-0")} aria-live="polite">{hits.length ? `找到 ${hits.length} 個技能；點石頭可看該石頭的完整內容。` : "沒有符合的技能。"}</p>
+    <div className="grid gap-2 min-[760px]:grid-cols-2 items-start">
+      {hits.map((hit) => <section key={hit.name} className="bg-white border border-[#dfe2dc] rounded-[9px] py-2 px-3">
+        <h3 className="fs-lg m-0 mb-1.5">{skillName(hit.name)}</h3>
+        <div className="flex flex-wrap gap-1.5">
+          {hit.stones.map((stone) => <button key={stone.key} onClick={() => { setTab(stone.tab); setQuery(""); }}
+            className="inline-flex items-center gap-1 py-1 px-2 border border-[#e3dac6] rounded-full bg-[#fffaf0] text-[#39423a] fs-md cursor-pointer hover:border-[#c9bd9f]">
+            {stone.tab === "event" ? null : <i className="w-2.5 h-2.5 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,.18)]" style={{ background: DRIFT_DOT[stone.key] }} />}
+            {stone.label}
+            {stone.rare ? <em className="not-italic text-[#e08a00] fs-sm font-bold">稀有</em> : null}
+            {stone.chance === undefined ? null : <span className="tabular-nums text-[#6d756e] fs-sm">{stone.chance.toFixed(1)}%</span>}
+          </button>)}
+        </div>
+      </section>)}
+    </div>
+  </div>;
   return <div>
+    {search}
     <DriftTabs big tabs={chips} value={tab} onChange={setTab} />
     {color ? <>
       {/* 寬螢幕左右並排：左邊來源魔物、右邊技能池；手機維持上下。 */}
@@ -791,7 +833,7 @@ function gearRowsOf(build: Build, seriesBy: Record<string, Series>, weaponTypeNa
     {
       id: "weapon",
       kind: weaponType ?? "",
-      title: weapon ? `${weapon.name}${weaponTypeName(weaponType)}` : "武器",
+      title: weapon ? weaponTitle(weapon.key, weaponType, weapon.name, weaponTypeName(weaponType)) : "武器",
       icon: weaponType && WEAPON_ICON[weaponType] ? WEAPON_ICON[weaponType] : WEAPON_ICON["long-sword"],
       item: weapon,
       itemKey: weapon ? `${weapon.key}::${weaponType}` : "",
@@ -1022,7 +1064,7 @@ function BuildCard({ build, rows, ctx, editingSlot, open, canDelete, onEdit, onT
         </div>
         <button tabIndex={readOnly ? -1 : undefined} className={cx("flex-1 min-w-0 flex items-center gap-2 py-1.5 px-2 border-0 bg-transparent text-left text-[#2b332c]", readOnly ? "cursor-default" : "cursor-pointer")} title={row.title} onClick={() => onEdit(row.id)}>
           {row.item ? <>
-            {ctx.icons[row.item.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item.key])})` }} /> : null}
+            {gearIcon(ctx.icons, row.itemKey) ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(gearIcon(ctx.icons, row.itemKey)!)})` }} /> : null}
             <span className="min-w-0 flex flex-col gap-0.5">
               <strong className="fs-lg font-bold truncate">{row.title}</strong>
               <small className={cx(GEAR_SMALL, "text-[#5b635c]")}>{Object.entries(skillsAtGrade(row.entries, MAX_GRADE)).map(([name, level]) => <span key={name}>{name} <b className="text-[#e08a00] font-bold">{level}</b></span>)}</small>
@@ -1199,7 +1241,7 @@ function GearBoxPicker({ kind, series, owned, ctx, onRequestSeries, onGrade, onC
         const current = owned[id];
         const registered = !!current && current !== "unforged";
         const rows = ctx.gradeRowsFor(item.key, candidate.kind);
-        const title = `${item.name}${candidate.name}`;
+        const title = weaponTitle(item.key, candidate.kind, item.name, candidate.name);
         return <div key={id} className="min-w-0 flex flex-col gap-2 p-3 rounded-lg border border-[#e3dac6] bg-[#fffaf0]">
           <span className="flex items-center gap-2 fs-md font-bold"><span aria-hidden="true" className={cx("block shrink-0 w-[var(--ic)] h-[var(--ic)]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(candidate.icon)})` }} />{candidate.name}</span>
           <div className="flex-1 fs-sm text-[#687168]">{Object.entries(skillsAtGrade(candidate.entries, MAX_GRADE)).map(([name, level]) => <span key={name} className="block">{name} {level}</span>)}</div>
@@ -1289,7 +1331,7 @@ function GearBox({ owned, forged, builds, seriesBy, ctx, weaponTypeName, slotNam
     const armor = slot !== "weapon";
     return <article key={id} className="min-w-0 flex flex-col gap-1.5 p-2 rounded-xl bg-[#fffaf0] border border-[#e3dac6]">
           <div className="flex items-center gap-2">
-            {ctx.icons[row.item!.key] ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[row.item!.key])})` }} /> : null}
+            {gearIcon(ctx.icons, row.itemKey) ? <span className={cx("flex-[0_0_38px] h-[38px]", BG_ICON)} style={{ backgroundImage: `url(${assetPath(gearIcon(ctx.icons, row.itemKey)!)})` }} /> : null}
             <strong className="flex-1 min-w-0 truncate fs-lg text-[#2b332c]" title={row.title}>{row.title}</strong>
             <CurrentGradeInput value={current} title={row.title} autoFocus={newArmor === id} emptyFallback={newArmor === id ? current : undefined} onCommit={(grade) => {
               onGrade(id, grade);
@@ -1447,9 +1489,9 @@ export function gearForSkill(series: Series[], skill: string | string[], freeTex
   const byName = (key: string) => includeNames && !!series.find((item) => item.key === key.split("::")[0] && hit(`${item.key} ${item.name}`.toLowerCase()));
   return series.flatMap((item) => [
     ...(scope !== "weapon" && item.hasArmor ? ARMOR_SLOTS.map((slot) => ({ slot, key: item.key, title: `${item.name}${SLOT_NAMES[slot]}`, entries: seriesSkills(item, slot), traits: undefined as WeaponTraits | undefined })) : []),
-    ...(scope !== "armor" ? item.weaponTypes.map((type) => ({ slot: "weapon" as const, key: `${item.key}::${type}`, title: `${item.name}${WEAPON_NAMES[type] ?? type}`, entries: seriesSkills(item, "weapon", type), traits: item.traits[type] })) : []),
+    ...(scope !== "armor" ? item.weaponTypes.map((type) => ({ slot: "weapon" as const, key: `${item.key}::${type}`, title: weaponTitle(item.key, type, item.name, WEAPON_NAMES[type] ?? type), entries: seriesSkills(item, "weapon", type), traits: item.traits[type] })) : []),
   ]).map((gear) => { const levels = skillsAtGrade(gear.entries, MAX_GRADE); return { ...gear, level: skills.reduce((sum, name) => sum + (levels[name] ?? 0), 0) }; })
-    .filter((gear) => freeText ? Object.keys(skillsAtGrade(gear.entries, MAX_GRADE)).some((name) => hit(name.toLowerCase())) || hit(traitSearchText(gear.traits)) || byName(gear.key) : gear.level > 0)
+    .filter((gear) => freeText ? Object.keys(skillsAtGrade(gear.entries, MAX_GRADE)).some((name) => hit(name.toLowerCase())) || hit(traitSearchText(gear.traits)) || byName(gear.key) || (includeNames && hit(gear.title.toLowerCase())) : gear.level > 0)
     .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, "zh-Hant"));
 }
 
@@ -1505,7 +1547,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
     if (!item) return [];
     const entries = part === "weapon" ? seriesSkills(item, "weapon", type) : seriesSkills(item, part);
     const levels = skillsAtGrade(entries, MAX_GRADE);
-    return [{ slot: part, key, title: `${item.name}${part === "weapon" ? (WEAPON_NAMES[type] ?? type) : SLOT_NAMES[part]}`, entries,
+    return [{ slot: part, key, title: part === "weapon" ? weaponTitle(item.key, type, item.name, WEAPON_NAMES[type] ?? type) : `${item.name}${SLOT_NAMES[part]}`, entries,
       traits: part === "weapon" ? item.traits[type] : undefined, level: wanted.reduce((sum, name) => sum + (levels[name] ?? 0), 0) }];
   };
   /** 武器升滿（G10-5）的攻擊／屬性／會心；key 是「系列::武器種類」。 */
@@ -1552,7 +1594,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
                 candidateGroups.current[row.id]?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
               }}
               className={cx("comparison-gear-card w-full min-w-0 rounded-lg border p-2 text-left", slot === row.id ? "border-[#099aa5] bg-[#eaf7f4]" : "border-[#e3dac6] bg-white hover:border-[#bca77e]")}>
-              <span className="flex items-center gap-1.5">{icon(row.item ? icons[row.item.key] : row.icon)}
+              <span className="flex items-center gap-1.5">{icon(row.item ? gearIcon(icons, row.itemKey) : row.icon)}
                 <strong title={row.item ? row.title : "未選裝備"} className="min-w-0 fs-sm text-[#39423a]">{row.item ? row.title : "未選裝備"}</strong>{holes(row.id, row.item?.key ?? "")}
               </span>
               {row.id === "weapon" && row.item ? <span className="block mt-0.5 fs-sm text-[#5b635c]">{statsText(build.gear.weapon ?? "")}{build.style ? `　✦ ${styleName(build.style)}` : ""}</span> : null}
@@ -1593,7 +1635,7 @@ function SkillGearPicker({ series, icons, build, onPick, onClose, visible, clear
                       return <button key={gear.key} type="button" data-slot={part} aria-pressed={selected} aria-label={`${selected ? "目前裝備" : "替換為"}${gear.title}`}
                         onClick={() => { setSlot(part); if (!selected) onPick(part, gear.key); }}
                         className={cx("comparison-gear-card relative min-w-0 rounded-lg border p-2 text-left", selected ? "border-[#099aa5] bg-[#eaf7f4]" : "border-[#e3dac6] bg-[#fffaf0] hover:border-[#bca77e]")}>
-                        <span className="flex items-center gap-1.5">{icon(icons[gear.key.split("::")[0]])}
+                        <span className="flex items-center gap-1.5">{icon(gearIcon(icons, gear.key))}
                           <strong title={gear.title} className="min-w-0 fs-sm text-[#39423a]">{gear.title}</strong>
                           {pinned ? <span title="自己指定的候選；在「＋ 指定魔物」裡再點一次可移除" className="shrink-0 rounded px-1 fs-sm text-[#80602d] bg-[#f6ecd8]">指定</span> : null}
                           {selected ? <span aria-hidden="true" className="text-[#087b84] fs-sm">✓</span> : null}{holes(part, gear.key)}
@@ -1707,7 +1749,11 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
   });
   const seen = new Set<string>();
   const candidates = [...monsterGear, ...searchGear].filter((plan) => { const id = plannedGearId(plan); if (seen.has(id)) return false; seen.add(id); return true; });
-  const titleOf = (plan: PlannedGear) => `${series.find((item) => item.key === plan.series)?.name ?? plan.series}・${plan.slot === "weapon" ? WEAPON_NAMES[plan.weaponType ?? ""] ?? plan.weaponType : SLOT_NAMES[plan.slot]}`;
+  const titleOf = (plan: PlannedGear) => {
+    const name = series.find((item) => item.key === plan.series)?.name ?? plan.series;
+    return plan.slot === "weapon" ? weaponTitle(plan.series, plan.weaponType ?? "", name, `・${WEAPON_NAMES[plan.weaponType ?? ""] ?? plan.weaponType}`) : `${name}・${SLOT_NAMES[plan.slot]}`;
+  };
+  const planIcon = (plan: PlannedGear) => gearIcon(ctx.icons, `${plan.series}::${plan.weaponType}`);
   const icon = (plan: PlannedGear, size = "w-6 h-6") => <span aria-hidden="true" className={cx("block shrink-0", size, BG_ICON)} style={{ backgroundImage: `url(${assetPath(plan.slot === "weapon" ? WEAPON_ICON[plan.weaponType ?? ""] : ARMOR_ICON[plan.slot])})` }} />;
   const skills = (plan: PlannedGear) => <span className="block fs-sm text-[#566154] leading-[1.5]">{Object.entries(skillsAtGrade(entriesFor(plan), MAX_GRADE)).map(([name, level]) => <span key={name} className="block">{name} <b className="font-semibold text-[#957039] tabular-nums">{level}</b></span>)}{!entriesFor(plan).length ? "無技能" : null}{plan.slot !== "weapon" ? <span className="block mt-0.5 fs-sm text-[#929c8d]" title="漂流石洞位">◇ {series.find((item) => item.key === plan.series)?.slots?.[plan.slot]?.length ?? 0}</span> : null}</span>;
   const update = (plan: PlannedGear, range: GradeRange) => onChange(plans.map((entry) => plannedGearId(entry) === plannedGearId(plan) ? { ...entry, ...range } : entry));
@@ -1721,7 +1767,7 @@ function PlannedGearPanel({ series, plans, onChange, ctx, included, onIncluded, 
         className="absolute inset-0 w-full h-full border-0 rounded-lg bg-transparent cursor-pointer focus-visible:outline-2 focus-visible:outline-[#829c8c] focus-visible:outline-offset-1" />
       <div className={cx("relative pointer-events-none flex items-center gap-1.5", plan.slot === "weapon" ? "w-[88px] shrink-0" : "mb-1.5")} title={titleOf(plan)}>
         <div className="shrink-0 flex flex-col items-center justify-center gap-0.5 rounded-md bg-[#eceee4] min-h-8">
-          {plan.slot === "weapon" && ctx.icons[plan.series] ? <span className={cx("block w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(ctx.icons[plan.series])})` }} /> : null}
+          {plan.slot === "weapon" && planIcon(plan) ? <span className={cx("block w-5 h-5", BG_ICON)} style={{ backgroundImage: `url(${assetPath(planIcon(plan)!)})` }} /> : null}
           {icon(plan)}
         </div>
         <div className="relative pointer-events-auto min-w-0 flex-1 grid gap-0.5">
@@ -2128,7 +2174,7 @@ export default function MhnowApp() {
   const searchHits = searchKey
     ? allSeries.flatMap((item) => [
       ...(item.hasArmor ? [{ id: `${item.key}::armor`, title: `${item.name}防具`, subtitle: "五個部位共用素材表", icon: ARMOR_ICON.mail }] : []),
-      ...item.weaponTypes.map((type) => ({ id: `${item.key}::${type}`, title: `${item.name}${weaponTypeName(type)}`, subtitle: "武器", icon: WEAPON_ICON[type] })),
+      ...item.weaponTypes.map((type) => ({ id: `${item.key}::${type}`, title: weaponTitle(item.key, type, item.name, weaponTypeName(type)), subtitle: "武器", icon: WEAPON_ICON[type] })),
     ]).filter((entry) => entry.title.toLowerCase().includes(searchKey)).slice(0, SEARCH_LIMIT)
     : [];
 
