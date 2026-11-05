@@ -41,10 +41,12 @@ if (start < 0) throw new Error("llms-full.txt 找不到「社群排行配裝」�
 const CODES_FILE = "src/mhnow/mhnowMeCodes.json";
 const previous = await readFile(CODES_FILE, "utf8").then(JSON.parse, () => ({ series: {}, skills: {} }));
 const seriesCodes = { ...previous.series }, skillCodes = { ...previous.skills };
+// 站方把歷年萬聖節裝備放在同一個代碼，本站分成三個系列：要看武器種類／部位才知道是哪個（人工在 mhnow.me 畫面對過）。
+const SHARED_SERIES_CODES = { M_10_9: { weapons: { "long-sword": "halloween-24", "hunting-horn": "halloween-25" }, armor: { helm: "halloween", greaves: "halloween-26" } } };
 const remember = (table, key, code) => {
   if (table[key] && table[key] !== code) throw new Error(`代碼對不上：${key} 同時是 ${table[key]} 與 ${code}`);
   const owner = Object.keys(table).find((other) => other !== key && table[other] === code);
-  if (owner) throw new Error(`代碼對不上：${code} 同時是 ${owner} 與 ${key}`);
+  if (owner && !SHARED_SERIES_CODES[code]) throw new Error(`代碼對不上：${code} 同時是 ${owner} 與 ${key}`);
   table[key] = code;
 };
 
@@ -81,12 +83,10 @@ for (const block of text.slice(start).split(/\n### #/).slice(1)) {
   if (rows.length !== 6) throw new Error(`#${head[1]} 部位數不對`);
   const type = WEAPON_TYPES[code[0]];
   if (!type) throw new Error(`未知武器種類：${code[0]}`);
-  const weaponName = zh(rows[0][1].match(/（(.+?)）/)[1]);
-  const weaponKey = nameToKey(weaponName);
-  remember(seriesCodes, weaponKey, code[1]);
+  // 共用代碼不靠文字對名稱（站方的名稱分不出年份），由 SHARED_SERIES_CODES 決定。
+  if (!SHARED_SERIES_CODES[code[1]]) remember(seriesCodes, nameToKey(zh(rows[0][1].match(/（(.+?)）/)[1])), code[1]);
   SLOTS.forEach(([src], position) => {
-    const key = nameToKey(zh(rows[position + 1][1]));
-    remember(seriesCodes, key, code[position + 2]);
+    if (!SHARED_SERIES_CODES[code[position + 2]]) remember(seriesCodes, nameToKey(zh(rows[position + 1][1])), code[position + 2]);
     const cell = rows[position + 1][3];
     const names = cell === "—" || cell === "無" ? [] : cell.split(" + ").map(skillZh);
     const holes = code[7][src] ?? [];
@@ -96,6 +96,9 @@ for (const block of text.slice(start).split(/\n### #/).slice(1)) {
 }
 
 for (const [key, code] of Object.entries(MANUAL_SERIES)) remember(seriesCodes, key, code);
+for (const [code, shared] of Object.entries(SHARED_SERIES_CODES)) {
+  for (const key of [...Object.values(shared.weapons), ...Object.values(shared.armor)]) remember(seriesCodes, key, code);
+}
 for (const [name, code] of Object.entries(MANUAL_SKILLS)) remember(skillCodes, name, code);
 
 // 第二步：站方首頁排行榜用的公開讀取端點（robots.txt 明講是渲染主內容所需，開放讀取），
@@ -120,18 +123,45 @@ for (const [code, key] of Object.entries(INFERRED_SERIES)) {
 }
 const keyByCode = Object.fromEntries(Object.entries(seriesCodes).map(([key, code]) => [code, key]));
 const nameByCode = Object.fromEntries(Object.entries(skillCodes).map(([name, code]) => [code, name]));
+// rest 的前六格（武器＋五件防具）→ 本站系列；共用代碼依武器種類／部位決定，對不到就是 undefined。
+const seriesKeysOf = (rest, type) => rest.slice(0, 6).map((code, position) => {
+  const shared = SHARED_SERIES_CODES[code];
+  if (!shared) return keyByCode[code];
+  return position === 0 ? shared.weapons[type] : shared.armor[SLOTS[position - 1][1]];
+});
 const builds = [];
 let skipped = 0;
+// 跳過的明細：跑完印出來，才知道要補哪個代碼或核對哪個組合。
+const unknownCodes = new Map(), unknownSkills = new Map(), unknownTypes = new Map(), weaponMismatch = new Map(), noArmor = new Map();
+const tally = (table, key) => table.set(key, (table.get(key) ?? 0) + 1);
+const printTally = (title, table) => {
+  if (!table.size) return;
+  console.log(`\n${title}`);
+  for (const [key, count] of [...table].sort((a, b) => b[1] - a[1])) console.log(`  ${key}：${count}`);
+};
+const explainSkip = (entry, type, keys, holes) => {
+  const [typeCode, ...rest] = entry.data;
+  if (!type) tally(unknownTypes, String(typeCode));
+  for (const code of new Set(rest.slice(0, 6).filter((_, position) => !keys[position]))) {
+    const list = unknownCodes.get(code) ?? [];
+    list.push(`https://mhnow.me/?load=${lz.compressToEncodedURIComponent(JSON.stringify(entry.data))}`);
+    unknownCodes.set(code, list);
+  }
+  SLOTS.forEach(([src], position) => (rest[6]?.[src] ?? []).forEach((code, hole) => { if (!holes[position][hole]) tally(unknownSkills, code); }));
+  const weapon = seriesOf[keys[0]];
+  if (weapon && type && !weapon.weaponTypes.includes(type)) tally(weaponMismatch, `${weapon.key} ${weapon.name} × ${type}`);
+  for (const key of keys.slice(1)) if (seriesOf[key] && !seriesOf[key].hasArmor) tally(noArmor, `${key} ${seriesOf[key].name}`);
+};
 for (const entry of rank.data) {
   const [typeCode, ...rest] = entry.data;
   const type = WEAPON_TYPES[typeCode], drifted = rest[6];
   // rest[7] 是這把武器選的風格代號（"none" 表示沒選；舊資料可能沒有這格，或放的是別的東西）。
   const style = typeof rest[7] === "string" && rest[7] !== "none" ? rest[7] : undefined;
-  const keys = rest.slice(0, 6).map((code) => keyByCode[code]);
+  const keys = seriesKeysOf(rest, type);
   const holes = SLOTS.map(([src]) => (drifted?.[src] ?? []).map((code) => nameByCode[code]));
   const weaponSeries = seriesOf[keys[0]];
   if (!type || keys.includes(undefined) || holes.flat().includes(undefined) || !weaponSeries?.weaponTypes.includes(type)
-    || keys.slice(1).some((key) => !seriesOf[key].hasArmor)) { skipped++; continue; }
+    || keys.slice(1).some((key) => !seriesOf[key].hasArmor)) { skipped++; explainSkip(entry, type, keys, holes); continue; }
   const gear = { weapon: `${keys[0]}::${type}` }, drifts = {};
   SLOTS.forEach(([, slot], position) => { gear[slot] = keys[position + 1]; drifts[slot] = holes[position]; });
   builds.push({ likes: entry.likes, unlikes: entry.unlikes, shares: entry.count, time: entry.first_time, type, gear, drifts, ...(style ? { style } : {}) });
@@ -182,7 +212,15 @@ await writeFile("public/mhnow/community-builds.json", JSON.stringify({
 const sorted = (table) => Object.fromEntries(Object.entries(table).sort(([a], [b]) => a.localeCompare(b)));
 await writeFile(CODES_FILE, JSON.stringify({
   weaponTypes: Object.fromEntries(Object.entries(WEAPON_TYPES).map(([code, type]) => [type, code])),
-  series: sorted(seriesCodes), skills: sorted(skillCodes),
+  series: sorted(seriesCodes), sharedSeries: SHARED_SERIES_CODES, skills: sorted(skillCodes),
 }, null, 1) + "\n");
 console.log(`抓取時間 ${new Date().toISOString()}；站方最新一筆配裝 ${new Date(newest * 1000).toISOString()}；跟上次存的資料比：新增 ${added} 套、移除 ${removed} 套`);
 console.log(`${rank.data.length} 套裡留下 ${builds.length} 套（${skipped} 套有認不得的代碼）；系列代碼 ${Object.keys(seriesCodes).length}、技能代碼 ${Object.keys(skillCodes).length}`);
+for (const [code, links] of unknownCodes) {
+  console.log(`\n未知系列代碼 ${code}：${links.length} 套，點開對照後補進 MANUAL_SERIES`);
+  links.slice(0, 5).forEach((link) => console.log(`  ${link}`));
+}
+printTally("未知技能代碼（補進 MANUAL_SKILLS）", unknownSkills);
+printTally("未知武器種類（補進 WEAPON_TYPES）", unknownTypes);
+printTally("系列沒有這種武器（一套可能同時有其他原因）", weaponMismatch);
+printTally("系列沒有防具", noArmor);

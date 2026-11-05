@@ -10,7 +10,7 @@ const INDEX = "public/mhnow/series-index.json";
 const DETAIL_DIR = "public/mhnow/series";
 const MAX_GRADE = 10;
 // 上游資料只叫「春季26／夏季26」；這兩把活動武器有自己的名稱，建議配裝要能當主要武器選。
-const NAME_OVERRIDES = { "malz": "爵銀龍", "spring-26": "薔薇突擊弩", "summer-26": "熱帶加農砲" };
+const NAME_OVERRIDES = { "malz": "爵銀龍", "spring-26": "薔薇突擊弩", "summer-26": "熱帶加農砲", "halloween-24": "禍鐮瓦爾納烏斯", "halloween-25": "骸骨之笛" };
 const LEVELS = ["1", "2", "3", "4", "5"];
 
 const smelt = await import("../data-source/mhn-quest/smelt.mjs");
@@ -126,7 +126,8 @@ for (const [key, config] of Object.entries(data.set)) {
   const forgeable = data.matForge[key] ?? [];
   // mhn.quest 原始資料裡「希望」系列的 switch-axe 重複列了兩次，這裡去重避免下游用 key 拼 id 時撞號。
   const weaponTypes = [...new Set(forgeable.filter((entry) => entry !== "armor" && weaponTypeNames[entry]))];
-  const hasArmor = forgeable.includes("armor") || Boolean(data.eq[key]?.helm);
+  // 活動防具可能只有單一部位（halloween-26 只有腳），任一部位有資料就算有防具。
+  const hasArmor = forgeable.includes("armor") || ["helm", "mail", "gloves", "belt", "greaves"].some((slot) => data.eq[key]?.[slot]);
   const eq = data.eq[key] ?? {};
 
   // unlock / lv 可能是單一值或陣列（一個技能在不同階級升級）。
@@ -143,8 +144,7 @@ for (const [key, config] of Object.entries(data.set)) {
   for (const slot of ["weapon", "helm", "mail", "gloves", "belt", "greaves"]) {
     const rows = Array.isArray(eq[slot]) ? skillRows(eq[slot]) : [];
     if (rows.length) skills[slot] = rows;
-  }
-  // 有些系列的某些武器種類技能不同（碎龍的輕／重弩是砲術、恐暴龍每種武器都不一樣…）：
+  }  // 有些系列的某些武器種類技能不同（碎龍的輕／重弩是砲術、恐暴龍每種武器都不一樣…）：
   // eq[系列][武器種類] 存在時整份取代 eq.weapon（mhn.quest 畫面也是這樣取）。
   const weaponSkills = {};
   for (const type of weaponTypes) if (Array.isArray(eq[type])) weaponSkills[type] = skillRows(eq[type]);

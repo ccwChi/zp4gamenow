@@ -24,6 +24,17 @@ describe("mhnow.me links", () => {
     }
   });
 
+  it("reads the shared Halloween code by weapon type and slot", () => {
+    const link = (type: string, head: string) => `?load=${lz.compressToEncodedURIComponent(JSON.stringify([type, "M_10_9", head, "M_0_1", "M_0_1", "M_0_1", "M_10_9", {}]))}`;
+    const horn = fromMhnowMeLink(link("hunting_horn", "M_10_9"));
+    if ("error" in horn) throw new Error(horn.error);
+    expect(horn.build.gear).toMatchObject({ weapon: "halloween-25::hunting-horn", helm: "halloween", greaves: "halloween-26" });
+    const sword = fromMhnowMeLink(link("long_sword", "M_10_9"));
+    if ("error" in sword) throw new Error(sword.error);
+    expect(sword.build.gear.weapon).toBe("halloween-24::long-sword");
+    expect(fromMhnowMeLink(link("bow", "M_10_9"))).toMatchObject({ error: expect.stringContaining("認不得") });
+  });
+
   it("accepts the bare code and rejects other text", () => {
     const link = toMhnowMeLink(toBuild(community.builds[0]));
     const load = "url" in link ? link.url.split("load=")[1] : "";

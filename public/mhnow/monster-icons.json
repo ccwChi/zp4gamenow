@@ -42,6 +42,7 @@
   "lago": "/mhnow/monsters/lagombi.webp",
   "volv": "/mhnow/monsters/volvidon.webp",
   "somn": "/mhnow/monsters/somnacanth.webp",
+  "a-somn": "/mhnow/monsters/aurorasomnacanth.webp",
   "tigr": "/mhnow/monsters/tigrex.webp",
   "b-tigr": "/mhnow/monsters/brute_tigrex.webp",
   "kiri": "/mhnow/monsters/kirin.webp",
@@ -67,7 +68,10 @@
   "s-cean": "/mhnow/monsters/shogun_ceanataur.webp",
   "velk": "/mhnow/monsters/velkhana.webp",
   "brac": "/mhnow/monsters/brachydios.webp",
-  "a-somn": "/mhnow/monsters/aurorasomnacanth.webp",
   "spring-26": "/mhnow/monsters/rose_assault.webp",
-  "summer-26": "/mhnow/monsters/tropical_cannon.webp"
+  "summer-26": "/mhnow/monsters/tropical_cannon.webp",
+  "halloween": "/mhnow/monsters/halloween-head.png",
+  "halloween-26": "/mhnow/monsters/halloween-feet.png",
+  "halloween-24": "/mhnow/monsters/halloween-long_sword.png",
+  "halloween-25": "/mhnow/monsters/halloween-hunting_horn.png"
 }

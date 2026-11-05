@@ -50,6 +50,10 @@
   "glav": "M_1_8",
   "goss": "M_4_7",
   "guardian": "M_10_8",
+  "halloween": "M_10_9",
+  "halloween-24": "M_10_9",
+  "halloween-25": "M_10_9",
+  "halloween-26": "M_10_9",
   "hope": "M_10_5",
   "jyur": "M_2_2",
   "khez": "M_3_4",
@@ -93,6 +97,18 @@
   "volv": "M_7_2",
   "winter-25": "M_10_4",
   "zino": "M_3_3"
+ },
+ "sharedSeries": {
+  "M_10_9": {
+   "weapons": {
+    "long-sword": "halloween-24",
+    "hunting-horn": "halloween-25"
+   },
+   "armor": {
+    "helm": "halloween",
+    "greaves": "halloween-26"
+   }
+  }
  },
  "skills": {
   "力量解放": "S_1_45",

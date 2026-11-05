@@ -51,7 +51,12 @@ for (const series of index.series) {
 }
 
 // 活動武器的圖示不是從 mhnow.me 下載，是手動放進 ICON_DIR 的檔案。
-Object.assign(manifest, { "spring-26": "/mhnow/monsters/rose_assault.webp", "summer-26": "/mhnow/monsters/tropical_cannon.webp" });
+Object.assign(manifest, {
+  "spring-26": "/mhnow/monsters/rose_assault.webp", "summer-26": "/mhnow/monsters/tropical_cannon.webp",
+  halloween: "/mhnow/monsters/halloween-head.png", "halloween-26": "/mhnow/monsters/halloween-feet.png", "halloween-24": "/mhnow/monsters/halloween-long_sword.png", "halloween-25": "/mhnow/monsters/halloween-hunting_horn.png",
+});
 await writeFile(MANIFEST, JSON.stringify(manifest, null, 2), "utf8");
 console.log(`完成 ${Object.keys(manifest).length} 個系列有圖示`);
 if (unresolved.length) console.log(`未取得：\n  ${unresolved.join("\n  ")}`);
+const withoutIcon = index.series.filter((series) => !manifest[series.key]);
+if (withoutIcon.length) console.log(`沒有圖示（${withoutIcon.length} 個，含刻意跳過的素材／活動系）：\n  ${withoutIcon.map((series) => `${series.key} ${series.name}`).join("\n  ")}`);

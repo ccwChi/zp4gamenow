@@ -15,6 +15,10 @@ const invert = (table: Record<string, string>) => Object.fromEntries(Object.entr
 const typeByCode = invert(codes.weaponTypes);
 const seriesByCode = invert(codes.series);
 const skillByCode = invert(codes.skills);
+// 站方同一個代碼對到本站多個系列（歷年萬聖節）：要看武器種類／部位才知道是哪個。
+const sharedSeries: Record<string, { weapons: Record<string, string>; armor: Record<string, string> }> = codes.sharedSeries;
+const weaponSeriesOf = (code: string, type: string) => sharedSeries[code] ? sharedSeries[code].weapons[type] : seriesByCode[code];
+const armorSeriesOf = (code: string, slot: string) => sharedSeries[code] ? sharedSeries[code].armor[slot] : seriesByCode[code];
 
 export type MhnowMeBuild = Pick<Build, "gear" | "drifts">;
 export type SeriesName = (key: string) => string;
@@ -50,13 +54,13 @@ export function fromMhnowMeLink(input: string): { build: MhnowMeBuild } | { erro
   try { payload = JSON.parse(lz.decompressFromEncodedURIComponent(load) ?? ""); } catch { payload = null; }
   if (!Array.isArray(payload) || payload.length < 8 || typeof payload[7] !== "object" || !payload[7]) return { error: "不是 mhnow.me 的配裝連結" };
   const type = typeByCode[payload[0]];
-  const weaponKey = seriesByCode[payload[1]];
+  const weaponKey = weaponSeriesOf(payload[1], type);
   if (!type || !weaponKey) return { error: "認不得這把武器（站方的代碼我們還沒收錄）" };
   const gear: Record<string, string> = { weapon: `${weaponKey}::${type}` };
   const drifts: Record<string, (DriftPick | null)[]> = {};
   const unknown: string[] = [];
   SLOTS.forEach(([src, slot], position) => {
-    const key = seriesByCode[payload[position + 2]];
+    const key = armorSeriesOf(payload[position + 2], slot);
     if (key) gear[slot] = key; else unknown.push(`${slot}（${payload[position + 2]}）`);
     const holes: unknown = (payload[7] as Record<string, unknown>)[src];
     drifts[slot] = (Array.isArray(holes) ? holes : []).map((code) => {

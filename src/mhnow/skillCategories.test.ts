@@ -23,6 +23,6 @@ it("uses the exact skill names from the data, and only event skills fall back to
   const names = new Set<string>(Object.keys(data.skillLevels));
   for (const item of data.series) for (const list of [...Object.values(item.skills), ...Object.values(item.weaponSkills ?? {})] as { skill: string }[][]) for (const entry of list) names.add(entry.skill);
   // 活動限定技能不在分類表裡，放在「其他」最後；其他技能都要有分類，避免資料改名後默默掉進「其他」。
-  const events = ["新年快樂", "MrBeast挑戰！", "氣球衝撞", "彩蛋爆發", "急速勁泳【2025】", "熱情盛夏【2025】"];
+  const events = ["新年快樂", "MrBeast挑戰！", "氣球衝撞", "彩蛋爆發", "急速勁泳【2025】", "熱情盛夏【2025】", "破壞王【萬聖節】"];
   expect([...names].filter((name) => !listed.has(name) && !events.includes(name))).toEqual([]);
 });
